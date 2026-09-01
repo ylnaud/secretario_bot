@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0f172a">
+  <title>Secretario</title>
+
+  <!-- Telegram Mini Apps -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <div class="app">
+
+    <header class="header">
+      <div>
+        <div class="eyebrow">SECRETARIO PERSONAL</div>
+        <h1>Hola 👋</h1>
+        <p id="date"></p>
+      </div>
+
+      <div class="avatar">👤</div>
+    </header>
+
+
+    <main>
+
+      <!-- RESUMEN -->
+      <section class="summary">
+        <div class="summary-card">
+          <span>📋</span>
+          <strong id="taskCount">0</strong>
+          <small>Tareas</small>
+        </div>
+
+        <div class="summary-card">
+          <span>⏰</span>
+          <strong id="reminderCount">0</strong>
+          <small>Recordatorios</small>
+        </div>
+
+        <div class="summary-card">
+          <span>🛒</span>
+          <strong id="shoppingCount">0</strong>
+          <small>Compras</small>
+        </div>
+      </section>
+
+
+      <!-- ACCIONES -->
+      <section class="section">
+
+        <div class="section-title">
+          <h2>Acciones rápidas</h2>
+        </div>
+
+        <div class="actions">
+
+          <button class="action primary" onclick="newTask()">
+            <span>➕</span>
+            <div>
+              <strong>Nueva tarea</strong>
+              <small>Crear una tarea</small>
+            </div>
+          </button>
+
+          <button class="action" onclick="showTasks()">
+            <span>📋</span>
+            <div>
+              <strong>Mis tareas</strong>
+              <small>Ver tareas pendientes</small>
+            </div>
+          </button>
+
+          <button class="action" onclick="newReminder()">
+            <span>⏰</span>
+            <div>
+              <strong>Recordatorio</strong>
+              <small>Crear recordatorio</small>
+            </div>
+          </button>
+
+          <button class="action" onclick="showShopping()">
+            <span>🛒</span>
+            <div>
+              <strong>Compras</strong>
+              <small>Lista de compras</small>
+            </div>
+          </button>
+
+        </div>
+
+      </section>
+
+
+      <!-- TAREAS -->
+      <section class="section">
+
+        <div class="section-title">
+          <h2>Próximas tareas</h2>
+          <button onclick="showTasks()">Ver todas</button>
+        </div>
+
+        <div id="tasks" class="list">
+
+          <div class="empty">
+            <div>📭</div>
+            <p>No tienes tareas todavía</p>
+            <button onclick="newTask()">Crear tarea</button>
+          </div>
+
+        </div>
+
+      </section>
+
+
+      <!-- COMPRAS -->
+      <section class="section">
+
+        <div class="section-title">
+          <h2>Lista de compras</h2>
+          <button onclick="showShopping()">Ver todas</button>
+        </div>
+
+        <div id="shopping" class="list">
+
+          <div class="empty small">
+            <div>🛒</div>
+            <p>Tu lista está vacía</p>
+          </div>
+
+        </div>
+
+      </section>
+
+    </main>
+
+
+    <!-- NAVEGACIÓN -->
+    <nav class="bottom-nav">
+
+      <button class="nav-item active" onclick="home()">
+        <span>🏠</span>
+        <small>Inicio</small>
+      </button>
+
+      <button class="nav-item" onclick="showTasks()">
+        <span>📋</span>
+        <small>Tareas</small>
+      </button>
+
+      <button class="nav-item add" onclick="newTask()">
+        <span>＋</span>
+      </button>
+
+      <button class="nav-item" onclick="showShopping()">
+        <span>🛒</span>
+        <small>Compras</small>
+      </button>
+
+      <button class="nav-item" onclick="showSettings()">
+        <span>⚙️</span>
+        <small>Ajustes</small>
+      </button>
+
+    </nav>
+
+  </div>
+
+
+  <!-- MODAL -->
+  <div id="modal" class="modal hidden">
+
+    <div class="modal-box">
+
+      <div class="modal-header">
+        <h2 id="modalTitle">Nueva tarea</h2>
+        <button onclick="closeModal()">✕</button>
+      </div>
+
+      <div id="modalContent"></div>
+
+    </div>
+
+  </div>
+
+
+  <script src="app.js"></script>
+
+</body>
+</html>
