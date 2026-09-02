@@ -104,6 +104,7 @@ function sanitizeText(text) {
 function mainMenu() {
 
     return Markup.keyboard([
+        ['📱 Abrir app'],
         ['➕ Nueva tarea', '📋 Mis tareas'],
         ['⏰ Recordatorio', '🛒 Compras'],
         ['➕ Compra', '📊 Resumen'],
@@ -680,6 +681,41 @@ COMANDOS
 ====================================================
 */
 
+/*
+====================================================
+BOTÓN DE LA MINI APP
+====================================================
+
+Render publica su dirección en RENDER_EXTERNAL_URL, así
+que el botón funciona sin configurar nada. MINI_APP_URL
+permite forzar otra si hiciera falta.
+
+Telegram solo abre miniaplicaciones por https, de modo
+que en local (http) el botón no se muestra.
+*/
+
+const MINI_APP_URL =
+    process.env.MINI_APP_URL ||
+    process.env.RENDER_EXTERNAL_URL ||
+    '';
+
+function miniAppButton() {
+
+    if (!MINI_APP_URL.startsWith('https://')) {
+        return null;
+    }
+
+    return Markup.inlineKeyboard([
+        [
+            Markup.button.webApp(
+                '📱 Abrir Secretario',
+                MINI_APP_URL
+            )
+        ]
+    ]);
+}
+
+
 bot.start(async ctx => {
 
     const taskCount = (await getPendingTasks()).length;
@@ -694,6 +730,48 @@ bot.start(async ctx => {
         'Escribe /help para ver comandos disponibles.',
         mainMenu()
     );
+
+    const button = miniAppButton();
+
+    if (button) {
+
+        await ctx.reply(
+            'Toca aquí para abrir la aplicación:',
+            button
+        );
+    }
+});
+
+
+bot.command('app', async ctx => {
+
+    const button = miniAppButton();
+
+    if (!button) {
+
+        await ctx.reply(
+            '⚠️ La aplicación no está publicada todavía.\n\n' +
+            'Falta configurar MINI_APP_URL con una dirección https.',
+            mainMenu()
+        );
+
+        return;
+    }
+
+    await ctx.reply(
+        '📱 Tu secretario:',
+        button
+    );
+});
+
+
+bot.hears('📱 Abrir app', async ctx => {
+
+    const button = miniAppButton();
+
+    if (button) {
+        await ctx.reply('📱 Tu secretario:', button);
+    }
 });
 
 const HELP_TEXT =
@@ -707,6 +785,9 @@ const HELP_TEXT =
     '🛒 Compras:\n' +
     '  • 🛒 Compras\n' +
     '  • ➕ Compra\n\n' +
+    '📱 Aplicación:\n' +
+    '  • 📱 Abrir app\n' +
+    '  • /app - Botón para abrirla\n\n' +
     '📊 Otros:\n' +
     '  • /help - Este mensaje\n' +
     '  • /id - Tu ID de usuario\n' +
