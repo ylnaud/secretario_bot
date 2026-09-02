@@ -327,6 +327,65 @@ async function deleteShopping(id) {
 
 /*
 ====================================================
+RESUMEN DIARIO
+====================================================
+*/
+
+async function getSummaryConfig() {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        SELECT summary_hour, summary_sent_on
+        FROM users
+        WHERE id = ${userId}
+    `;
+
+    const row = rows[0] || {};
+
+    return {
+        hour: row.summary_hour,
+
+        /*
+           La fecha se compara como texto AAAA-MM-DD, que es
+           como la calcula el bot en la zona del usuario.
+        */
+
+        sentOn: row.summary_sent_on
+            ? new Date(row.summary_sent_on)
+                .toISOString()
+                .slice(0, 10)
+            : null
+    };
+}
+
+
+async function setSummaryHour(hour) {
+
+    const userId = await getOwnerUserId();
+
+    await sql`
+        UPDATE users
+        SET summary_hour = ${hour}, updated_at = NOW()
+        WHERE id = ${userId}
+    `;
+}
+
+
+async function markSummarySent(day) {
+
+    const userId = await getOwnerUserId();
+
+    await sql`
+        UPDATE users
+        SET summary_sent_on = ${day}, updated_at = NOW()
+        WHERE id = ${userId}
+    `;
+}
+
+
+/*
+====================================================
 ESTADÍSTICAS
 ====================================================
 */
@@ -378,5 +437,8 @@ module.exports = {
     getShopping,
     completeShopping,
     deleteShopping,
+    getSummaryConfig,
+    setSummaryHour,
+    markSummarySent,
     getStats
 };

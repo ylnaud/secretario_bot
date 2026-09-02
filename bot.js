@@ -45,6 +45,9 @@ const {
     getShopping,
     completeShopping,
     deleteShopping,
+    getSummaryConfig,
+    setSummaryHour,
+    markSummarySent,
     getStats
 } = require('./database');
 
@@ -112,7 +115,8 @@ function mainMenu() {
         ['➕ Nueva tarea', '📋 Mis tareas'],
         ['⏰ Recordatorio', '🛒 Compras'],
         ['➕ Compra', '📊 Resumen'],
-        ['❓ Ayuda', '🏠 Inicio']
+        ['☀️ Resumen del día', '❓ Ayuda'],
+        ['🏠 Inicio']
     ]).resize();
 }
 
@@ -736,6 +740,81 @@ bot.command('app', async ctx => {
 });
 
 
+bot.command('resumen', async ctx => {
+
+    const argumento =
+        (ctx.message.text.split(' ')[1] || '').toLowerCase();
+
+    /*
+       Sin argumento se manda el resumen; con uno se
+       configura a qué hora llega cada día.
+    */
+
+    if (!argumento) {
+
+        await ctx.reply(await buildSummary(), mainMenu());
+
+        return;
+    }
+
+    if (argumento === 'off' || argumento === 'no') {
+
+        await setSummaryHour(null);
+
+        await ctx.reply(
+            '🔕 Ya no recibirás el resumen diario.\n\n' +
+            'Puedes volver a activarlo con /resumen 8',
+            mainMenu()
+        );
+
+        return;
+    }
+
+    const hora = Number(argumento);
+
+    if (!Number.isInteger(hora) || hora < 0 || hora > 23) {
+
+        await ctx.reply(
+            '⚠️ Dime una hora entre 0 y 23.\n\n' +
+            'Ejemplos:\n' +
+            '  /resumen 8   → cada día a las 8\n' +
+            '  /resumen off → dejar de recibirlo\n' +
+            '  /resumen     → verlo ahora mismo',
+            mainMenu()
+        );
+
+        return;
+    }
+
+    await setSummaryHour(hora);
+
+    /*
+       Si la hora de hoy ya pasó, se marca como enviado para
+       que no llegue de golpe justo al configurarlo.
+    */
+
+    const ahoraPared = tiempo.ahora();
+
+    if (ahoraPared.hour >= hora) {
+        await markSummarySent(tiempo.diaTexto(ahoraPared));
+    }
+
+    await ctx.reply(
+        `☀️ Cada día a las ${hora}:00 te mandaré el resumen.\n\n` +
+        (ahoraPared.hour >= hora
+            ? 'El primero llegará mañana.'
+            : 'El primero llega hoy.'),
+        mainMenu()
+    );
+});
+
+
+bot.hears('☀️ Resumen del día', async ctx => {
+
+    await ctx.reply(await buildSummary(), mainMenu());
+});
+
+
 bot.hears('📱 Abrir app', async ctx => {
 
     const button = miniAppButton();
@@ -761,6 +840,10 @@ const HELP_TEXT =
     '🛒 Compras:\n' +
     '  • 🛒 Compras\n' +
     '  • ➕ Compra\n\n' +
+    '☀️ Resumen diario:\n' +
+    '  • /resumen - Verlo ahora\n' +
+    '  • /resumen 8 - Recibirlo a las 8\n' +
+    '  • /resumen off - Dejar de recibirlo\n\n' +
     '📱 Aplicación:\n' +
     '  • 📱 Abrir app\n' +
     '  • /app - Botón para abrirla\n\n' +
@@ -1487,6 +1570,176 @@ el proceso vuelve a ejecutarse.
 ====================================================
 */
 
+/*
+====================================================
+RESUMEN DIARIO
+====================================================
+
+Un mensaje por la mañana con lo que hay por delante.
+*/
+
+const SUMMARY_HOUR_DEFAULT = 8;
+
+
+async function buildSummary() {
+
+    const [tasks, shopping] = await Promise.all([
+        getPendingTasks(),
+        getShopping()
+    ]);
+
+    const hoy = tiempo.ahora();
+
+    const atrasadas = [];
+    const deHoy = [];
+    const proximas = [];
+    const sinFecha = [];
+
+    for (const task of tasks) {
+
+        if (!task.due_at) {
+            sinFecha.push(task);
+            continue;
+        }
+
+        if (tiempo.esDelDia(task.due_at, hoy)) {
+            deHoy.push(task);
+            continue;
+        }
+
+        if (new Date(task.due_at) < new Date()) {
+            atrasadas.push(task);
+            continue;
+        }
+
+        proximas.push(task);
+    }
+
+    let mensaje =
+        '☀️ RESUMEN DEL DÍA\n' +
+        `${tiempo.formatear(new Date()).split(',').slice(0, 2).join(',')}\n`;
+
+    if (atrasadas.length) {
+
+        mensaje += `\n⚠️ ATRASADAS (${atrasadas.length})\n`;
+
+        for (const t of atrasadas.slice(0, 10)) {
+            mensaje +=
+                `  • ${t.text} — ${tiempo.formatearCorto(t.due_at)}\n`;
+        }
+    }
+
+    if (deHoy.length) {
+
+        mensaje += `\n📅 HOY (${deHoy.length})\n`;
+
+        for (const t of deHoy) {
+            mensaje +=
+                `  • ${tiempo.soloHora(t.due_at)}  ${t.text}` +
+                `${t.recurrence ? ' 🔁' : ''}\n`;
+        }
+    }
+
+    if (sinFecha.length) {
+
+        mensaje += `\n📋 SIN FECHA (${sinFecha.length})\n`;
+
+        for (const t of sinFecha.slice(0, 10)) {
+            mensaje += `  • ${t.text}\n`;
+        }
+    }
+
+    if (proximas.length) {
+
+        const siguiente = proximas[0];
+
+        mensaje +=
+            `\n🔜 Lo siguiente: ${siguiente.text} ` +
+            `(${tiempo.formatearCorto(siguiente.due_at)})\n`;
+    }
+
+    if (shopping.length) {
+
+        mensaje +=
+            `\n🛒 COMPRAS (${shopping.length})\n  ` +
+            shopping.slice(0, 12).map(i => i.item).join(', ') + '\n';
+    }
+
+    if (
+        !atrasadas.length &&
+        !deHoy.length &&
+        !sinFecha.length &&
+        !shopping.length
+    ) {
+        mensaje += '\n🎉 No tienes nada pendiente. Disfruta el día.\n';
+    }
+
+    return mensaje;
+}
+
+
+/*
+   Se comprueba con la misma frecuencia que los recordatorios.
+
+   La condición es "ya son las 8 o más y hoy no se ha
+   mandado", en vez de "son exactamente las 8": si el
+   servicio estaba dormido a esa hora, el resumen llega
+   igual en cuanto despierta.
+*/
+
+let checkingSummary = false;
+
+async function checkDailySummary() {
+
+    if (checkingSummary) {
+        return;
+    }
+
+    checkingSummary = true;
+
+    try {
+
+        const config = await getSummaryConfig();
+
+        if (config.hour === null || config.hour === undefined) {
+            return;
+        }
+
+        const hoy = tiempo.ahora();
+        const diaDeHoy = tiempo.diaTexto(hoy);
+
+        if (config.sentOn === diaDeHoy) {
+            return;
+        }
+
+        if (hoy.hour < config.hour) {
+            return;
+        }
+
+        await bot.telegram.sendMessage(
+            OWNER_ID,
+            await buildSummary(),
+            mainMenu()
+        );
+
+        await markSummarySent(diaDeHoy);
+
+        console.log(`☀️ Resumen diario enviado (${diaDeHoy})`);
+
+    } catch (error) {
+
+        console.error(
+            '❌ Error con el resumen diario:',
+            error.message
+        );
+
+    } finally {
+
+        checkingSummary = false;
+    }
+}
+
+
 let checkingReminders = false;
 
 async function checkReminders() {
@@ -1679,9 +1932,13 @@ async function main() {
     */
 
     checkReminders();
+    checkDailySummary();
 
     setInterval(
-        checkReminders,
+        () => {
+            checkReminders();
+            checkDailySummary();
+        },
         REMINDER_INTERVAL
     );
 

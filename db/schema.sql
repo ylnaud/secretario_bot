@@ -60,6 +60,22 @@ ALTER TABLE tasks
 ADD COLUMN IF NOT EXISTS recurrence VARCHAR(20);
 
 
+/*
+   RESUMEN DIARIO
+
+   summary_hour: hora a la que enviarlo, o NULL si no se
+   quiere. summary_sent_on guarda el día del último envío
+   para no repetirlo, y se compara contra la fecha en la
+   zona del usuario, no la del servidor.
+*/
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS summary_hour INTEGER;
+
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS summary_sent_on DATE;
+
+
 CREATE INDEX IF NOT EXISTS tasks_user_id_idx
 ON tasks(user_id);
 

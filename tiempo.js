@@ -208,6 +208,41 @@ function esFutura(pared) {
 }
 
 
+/*
+   El día en formato AAAA-MM-DD, según el calendario del
+   usuario: a las 00:30 de Canarias ya es el día siguiente
+   aunque en el servidor todavía no lo sea.
+*/
+
+function diaTexto(pared = ahora()) {
+
+    return `${pared.year}-` +
+        `${dosDigitos(pared.month)}-` +
+        `${dosDigitos(pared.day)}`;
+}
+
+
+/*
+   Comprueba si un instante cae dentro del día indicado.
+*/
+
+function esDelDia(instante, pared = ahora()) {
+
+    return diaTexto(aPared(new Date(instante))) ===
+        diaTexto(pared);
+}
+
+
+function soloHora(instante) {
+
+    return format({
+        date: new Date(instante),
+        format: 'HH:mm',
+        tz: ZONA
+    });
+}
+
+
 function formatear(instante) {
 
     if (!instante) {
@@ -250,6 +285,9 @@ module.exports = {
     diaDeLaSemana,
     proximoDiaSemana,
     esFutura,
+    diaTexto,
+    esDelDia,
+    soloHora,
     formatear,
     formatearCorto
 };
