@@ -13,6 +13,7 @@
  */
 
 const sql = require('./lib/db');
+const tiempo = require('./tiempo');
 
 const OWNER_ID = String(process.env.OWNER_ID || '');
 
@@ -115,39 +116,25 @@ enero no se salte febrero.
 
 function nextOccurrence(dueAt, recurrence) {
 
-    const date = new Date(dueAt);
+    /*
+       La cuenta se hace sobre la hora del reloj del usuario,
+       no sumando 24 horas al instante: así una tarea de las
+       9:00 sigue siendo a las 9:00 la semana que el país
+       cambia al horario de verano.
+    */
+
+    const pared = tiempo.aPared(new Date(dueAt));
 
     if (recurrence === 'daily') {
-
-        date.setDate(date.getDate() + 1);
-
-        return date;
+        return tiempo.aInstante(tiempo.sumarDias(pared, 1));
     }
 
     if (recurrence === 'weekly') {
-
-        date.setDate(date.getDate() + 7);
-
-        return date;
+        return tiempo.aInstante(tiempo.sumarDias(pared, 7));
     }
 
     if (recurrence === 'monthly') {
-
-        const day = date.getDate();
-
-        date.setDate(1);
-
-        date.setMonth(date.getMonth() + 1);
-
-        const lastDay = new Date(
-            date.getFullYear(),
-            date.getMonth() + 1,
-            0
-        ).getDate();
-
-        date.setDate(Math.min(day, lastDay));
-
-        return date;
+        return tiempo.aInstante(tiempo.sumarMeses(pared, 1));
     }
 
     return null;

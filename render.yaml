@@ -35,3 +35,8 @@ services:
       # sin gastar batería y así los recordatorios llegan antes.
       - key: REMINDER_INTERVAL_MS
         value: "15000"
+
+      # La zona del usuario, no la del servidor: las horas que
+      # se escriben ("mañana a las 9") son las de su reloj.
+      - key: TIMEZONE
+        value: Atlantic/Canary

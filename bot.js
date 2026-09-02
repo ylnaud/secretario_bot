@@ -48,6 +48,8 @@ const {
     getStats
 } = require('./database');
 
+const tiempo = require('./tiempo');
+
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const RATE_LIMIT_MAX = 20;
 
@@ -123,17 +125,7 @@ function cancelMenu() {
 
 function formatDate(dateString) {
 
-    if (!dateString) {
-        return 'Sin fecha';
-    }
-
-    return new Date(dateString).toLocaleString(
-        'es-ES',
-        {
-            dateStyle: 'full',
-            timeStyle: 'short'
-        }
-    );
+    return tiempo.formatear(dateString);
 }
 
 /*
@@ -151,38 +143,6 @@ function normalizeText(text) {
         .replace(/[.,]/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
-}
-
-function setTime(date, hour, minute = 0) {
-
-    date.setHours(
-        Number(hour),
-        Number(minute),
-        0,
-        0
-    );
-
-    return date;
-}
-
-function nextWeekday(baseDate, weekday) {
-
-    const result = new Date(baseDate);
-
-    const current = result.getDay();
-
-    let difference =
-        (weekday - current + 7) % 7;
-
-    if (difference === 0) {
-        difference = 7;
-    }
-
-    result.setDate(
-        result.getDate() + difference
-    );
-
-    return result;
 }
 
 function parseTime(text) {
@@ -213,11 +173,44 @@ function parseTime(text) {
     };
 }
 
+
+/*
+   Devuelve la hora de pared que ha entendido, no un
+   instante: quien llame decide cuándo convertirla, y así
+   sumar días nunca se descuadra por el cambio de hora.
+
+   Cuando no se dice la hora se usan las 9:00, salvo por la
+   tarde y la noche, que van a las 18:00.
+*/
+
 function parseNaturalDate(text) {
 
     const normalized = normalizeText(text);
 
-    const now = new Date();
+    const base = tiempo.ahora();
+
+    const time = parseTime(normalized);
+
+    /*
+       Los números de la propia fecha no son la hora: en
+       "15/03" el 15 es el día, y en "en 3 dias" el 3 son
+       días. Cada rama descarta su fragmento antes de
+       buscar la hora.
+    */
+
+    function horaFuera(fragmento) {
+
+        return parseTime(
+            normalized.replace(fragmento, ' ')
+        );
+    }
+
+    function conHoraOPorDefecto(pared, porDefecto = 9, hora = time) {
+
+        return hora
+            ? tiempo.conHora(pared, hora.hour, hora.minute)
+            : tiempo.conHora(pared, porDefecto, 0);
+    }
 
     /*
        EN X MINUTOS
@@ -230,10 +223,7 @@ function parseNaturalDate(text) {
     if (match) {
 
         return {
-            date: new Date(
-                now.getTime() +
-                Number(match[1]) * 60 * 1000
-            ),
+            pared: tiempo.sumarMinutos(base, Number(match[1])),
             confidence: 'high'
         };
     }
@@ -249,10 +239,7 @@ function parseNaturalDate(text) {
     if (match) {
 
         return {
-            date: new Date(
-                now.getTime() +
-                Number(match[1]) * 60 * 60 * 1000
-            ),
+            pared: tiempo.sumarMinutos(base, Number(match[1]) * 60),
             confidence: 'high'
         };
     }
@@ -267,25 +254,19 @@ function parseNaturalDate(text) {
 
     if (match) {
 
-        const date = new Date(now);
+        const horaReal = horaFuera(match[0]);
 
-        date.setDate(
-            date.getDate() +
-            Number(match[1])
-        );
+        const pared =
+            tiempo.sumarDias(base, Number(match[1]));
 
-        const time = parseTime(normalized);
-
-        if (time) {
-            setTime(
-                date,
-                time.hour,
-                time.minute
-            );
-        }
+        /*
+           Sin hora, se usan las 9:00 como en el resto: un
+           aviso heredaría si no la hora exacta en que se
+           escribió, y de madrugada no sirve de nada.
+        */
 
         return {
-            date,
+            pared: conHoraOPorDefecto(pared, 9, horaReal),
             confidence: 'high'
         };
     }
@@ -296,33 +277,10 @@ function parseNaturalDate(text) {
 
     if (normalized.includes('manana')) {
 
-        const date = new Date(now);
-
-        date.setDate(
-            date.getDate() + 1
-        );
-
-        const time = parseTime(normalized);
-
-        if (time) {
-
-            setTime(
-                date,
-                time.hour,
-                time.minute
-            );
-
-        } else {
-
-            setTime(
-                date,
-                9,
-                0
-            );
-        }
-
         return {
-            date,
+            pared: conHoraOPorDefecto(
+                tiempo.sumarDias(base, 1)
+            ),
             confidence: 'high'
         };
     }
@@ -333,28 +291,18 @@ function parseNaturalDate(text) {
 
     if (/\bhoy\b/.test(normalized)) {
 
-        const time = parseTime(normalized);
-
         if (!time) {
             return null;
         }
 
-        const date = new Date(now);
-
-        setTime(
-            date,
-            time.hour,
-            time.minute
-        );
-
         return {
-            date,
+            pared: tiempo.conHora(base, time.hour, time.minute),
             confidence: 'high'
         };
     }
 
     /*
-       ESTA TARDE
+       ESTA TARDE / ESTA NOCHE
     */
 
     if (
@@ -362,35 +310,14 @@ function parseNaturalDate(text) {
         normalized.includes('esta noche')
     ) {
 
-        const date = new Date(now);
+        let pared = conHoraOPorDefecto(base, 18);
 
-        const time = parseTime(normalized);
-
-        if (time) {
-
-            setTime(
-                date,
-                time.hour,
-                time.minute
-            );
-
-        } else {
-
-            setTime(
-                date,
-                18,
-                0
-            );
-        }
-
-        if (date <= now) {
-            date.setDate(
-                date.getDate() + 1
-            );
+        if (!tiempo.esFutura(pared)) {
+            pared = tiempo.sumarDias(pared, 1);
         }
 
         return {
-            date,
+            pared,
             confidence: 'medium'
         };
     }
@@ -411,41 +338,12 @@ function parseNaturalDate(text) {
 
     for (const [name, number] of Object.entries(weekdays)) {
 
-        if (
-            normalized.includes(
-                `el ${name}`
-            ) ||
-            normalized.includes(name)
-        ) {
-
-            const date =
-                nextWeekday(
-                    now,
-                    number
-                );
-
-            const time =
-                parseTime(normalized);
-
-            if (time) {
-
-                setTime(
-                    date,
-                    time.hour,
-                    time.minute
-                );
-
-            } else {
-
-                setTime(
-                    date,
-                    9,
-                    0
-                );
-            }
+        if (normalized.includes(name)) {
 
             return {
-                date,
+                pared: conHoraOPorDefecto(
+                    tiempo.proximoDiaSemana(base, number)
+                ),
                 confidence: 'high'
             };
         }
@@ -461,51 +359,30 @@ function parseNaturalDate(text) {
 
     if (match) {
 
-        const day = Number(match[1]);
-        const month = Number(match[2]) - 1;
-
-        const year =
-            match[3]
-                ? Number(match[3])
-                : now.getFullYear();
-
-        const date = new Date(
-            year,
-            month,
-            day
+        let pared = conHoraOPorDefecto(
+            {
+                year: match[3] ? Number(match[3]) : base.year,
+                month: Number(match[2]),
+                day: Number(match[1]),
+                hour: 9,
+                minute: 0
+            },
+            9,
+            horaFuera(match[0])
         );
 
-        const time =
-            parseTime(normalized);
+        /*
+           Sin año, una fecha ya pasada se entiende como
+           la del año que viene.
+        */
 
-        if (time) {
+        if (!match[3] && !tiempo.esFutura(pared)) {
 
-            setTime(
-                date,
-                time.hour,
-                time.minute
-            );
-
-        } else {
-
-            setTime(
-                date,
-                9,
-                0
-            );
-        }
-
-        if (
-            !match[3] &&
-            date < now
-        ) {
-            date.setFullYear(
-                date.getFullYear() + 1
-            );
+            pared = { ...pared, year: pared.year + 1 };
         }
 
         return {
-            date,
+            pared,
             confidence: 'high'
         };
     }
@@ -521,17 +398,14 @@ function parseNaturalDate(text) {
 
     if (match) {
 
-        const date = new Date(
-            Number(match[1]),
-            Number(match[2]) - 1,
-            Number(match[3]),
-            Number(match[4] || 9),
-            Number(match[5] || 0),
-            0
-        );
-
         return {
-            date,
+            pared: {
+                year: Number(match[1]),
+                month: Number(match[2]),
+                day: Number(match[3]),
+                hour: Number(match[4] || 9),
+                minute: Number(match[5] || 0)
+            },
             confidence: 'high'
         };
     }
@@ -539,9 +413,9 @@ function parseNaturalDate(text) {
     return null;
 }
 
+
 /*
-====================================================
-TAREAS QUE SE REPITEN
+
 ====================================================
 */
 
@@ -605,18 +479,18 @@ function extractReminder(text) {
 
         const time = parseTime(normalized);
 
-        const date = setTime(
-            new Date(),
+        let pared = tiempo.conHora(
+            tiempo.ahora(),
             time ? time.hour : 9,
             time ? time.minute : 0
         );
 
-        if (date <= new Date()) {
-            date.setDate(date.getDate() + 1);
+        if (!tiempo.esFutura(pared)) {
+            pared = tiempo.sumarDias(pared, 1);
         }
 
         parsed = {
-            date,
+            pared,
             confidence: time ? 'medium' : 'low'
         };
     }
@@ -737,7 +611,7 @@ function extractReminder(text) {
 
     return {
         text: cleanText,
-        date: parsed.date,
+        date: tiempo.aInstante(parsed.pared),
         recurrence
     };
 }
@@ -1836,7 +1710,7 @@ async function main() {
     );
 
     console.log(
-        `✅ Hora de inicio: ${new Date().toLocaleString('es-ES')}`
+        `✅ Hora de inicio: ${tiempo.formatear(new Date())} (${tiempo.ZONA})`
     );
 
     await bot.launch();
