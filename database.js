@@ -65,6 +65,7 @@ function toTask(row) {
         due_at: row.due_at,
         done: row.completed,
         notified: row.notified,
+        recurrence: row.recurrence,
         created_at: row.created_at
     };
 }
@@ -85,17 +86,116 @@ TAREAS
 ====================================================
 */
 
-async function addTask(text, dueAt = null) {
+async function addTask(text, dueAt = null, recurrence = null) {
 
     const userId = await getOwnerUserId();
 
     const rows = await sql`
-        INSERT INTO tasks (user_id, title, due_at)
-        VALUES (${userId}, ${text}, ${dueAt})
+        INSERT INTO tasks (user_id, title, due_at, recurrence)
+        VALUES (${userId}, ${text}, ${dueAt}, ${recurrence})
         RETURNING *
     `;
 
     return toTask(rows[0]);
+}
+
+
+/*
+====================================================
+REPETICIÓN
+====================================================
+
+Calcula cuándo toca la siguiente vez, partiendo de la
+fecha que acaba de vencer.
+
+Con 'monthly', los días 29, 30 y 31 se ajustan al último
+día del mes que corresponda, para que un aviso del 31 de
+enero no se salte febrero.
+*/
+
+function nextOccurrence(dueAt, recurrence) {
+
+    const date = new Date(dueAt);
+
+    if (recurrence === 'daily') {
+
+        date.setDate(date.getDate() + 1);
+
+        return date;
+    }
+
+    if (recurrence === 'weekly') {
+
+        date.setDate(date.getDate() + 7);
+
+        return date;
+    }
+
+    if (recurrence === 'monthly') {
+
+        const day = date.getDate();
+
+        date.setDate(1);
+
+        date.setMonth(date.getMonth() + 1);
+
+        const lastDay = new Date(
+            date.getFullYear(),
+            date.getMonth() + 1,
+            0
+        ).getDate();
+
+        date.setDate(Math.min(day, lastDay));
+
+        return date;
+    }
+
+    return null;
+}
+
+
+/*
+   Programa la siguiente vez de una tarea que se repite.
+   Devuelve la nueva tarea, o null si no se repetía.
+*/
+
+async function scheduleNext(task) {
+
+    if (!task.recurrence || !task.due_at) {
+        return null;
+    }
+
+    const next =
+        nextOccurrence(task.due_at, task.recurrence);
+
+    if (!next) {
+        return null;
+    }
+
+    return addTask(
+        task.text,
+        next.toISOString(),
+        task.recurrence
+    );
+}
+
+
+/*
+   Deja de repetir una tarea sin borrar la que ya existe.
+*/
+
+async function stopRecurrence(id) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        UPDATE tasks
+        SET recurrence = NULL, updated_at = NOW()
+        WHERE id = ${Number(id)} AND user_id = ${userId}
+        RETURNING id
+    `;
+
+    return rows.length > 0;
 }
 
 async function getPendingTasks() {
@@ -279,6 +379,9 @@ async function getStats() {
 module.exports = {
     getOwnerUserId,
     addTask,
+    nextOccurrence,
+    scheduleNext,
+    stopRecurrence,
     getPendingTasks,
     getDueTasks,
     markNotified,

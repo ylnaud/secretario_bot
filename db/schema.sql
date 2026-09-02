@@ -35,11 +35,29 @@ CREATE TABLE IF NOT EXISTS tasks (
 
   notified BOOLEAN NOT NULL DEFAULT FALSE,
 
+  /*
+     Cómo se repite la tarea: daily, weekly, monthly o
+     NULL si solo ocurre una vez. La siguiente fecha se
+     calcula desde due_at, así que no hace falta guardar
+     el día de la semana ni del mes.
+  */
+
+  recurrence VARCHAR(20),
+
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 );
+
+
+/*
+   La columna se añade aparte para las bases que ya
+   existían antes de haber tareas recurrentes.
+*/
+
+ALTER TABLE tasks
+ADD COLUMN IF NOT EXISTS recurrence VARCHAR(20);
 
 
 CREATE INDEX IF NOT EXISTS tasks_user_id_idx

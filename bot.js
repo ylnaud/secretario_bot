@@ -34,6 +34,8 @@ const {
 const {
     getOwnerUserId,
     addTask,
+    scheduleNext,
+    stopRecurrence,
     getPendingTasks,
     getDueTasks,
     markNotified,
@@ -537,10 +539,87 @@ function parseNaturalDate(text) {
     return null;
 }
 
+/*
+====================================================
+TAREAS QUE SE REPITEN
+====================================================
+*/
+
+const WEEKDAY_NAMES =
+    'domingo|lunes|martes|miercoles|jueves|viernes|sabado';
+
+function parseRecurrence(normalized) {
+
+    if (
+        /\b(cada|todos los)\s+dias?\b/.test(normalized) ||
+        /\b(diariamente|a diario)\b/.test(normalized)
+    ) {
+        return 'daily';
+    }
+
+    if (
+        new RegExp(
+            `\\b(cada|todos los)\\s+(${WEEKDAY_NAMES})\\b`
+        ).test(normalized) ||
+        /\b(cada|todas las)\s+semanas?\b/.test(normalized) ||
+        /\bsemanalmente\b/.test(normalized)
+    ) {
+        return 'weekly';
+    }
+
+    if (
+        /\b(cada|todos los)\s+mes(es)?\b/.test(normalized) ||
+        /\bmensualmente\b/.test(normalized)
+    ) {
+        return 'monthly';
+    }
+
+    return null;
+}
+
+
+function describeRecurrence(recurrence) {
+
+    if (recurrence === 'daily') return 'todos los días';
+    if (recurrence === 'weekly') return 'cada semana';
+    if (recurrence === 'monthly') return 'cada mes';
+
+    return '';
+}
+
+
 function extractReminder(text) {
 
-    const parsed =
-        parseNaturalDate(text);
+    const normalized = normalizeText(text);
+
+    const recurrence = parseRecurrence(normalized);
+
+    let parsed = parseNaturalDate(text);
+
+    /*
+       "cada día a las 9" no lleva ninguna fecha, solo una
+       hora suelta. Se toma la próxima vez que den esa hora.
+    */
+
+    if (!parsed && recurrence) {
+
+        const time = parseTime(normalized);
+
+        const date = setTime(
+            new Date(),
+            time ? time.hour : 9,
+            time ? time.minute : 0
+        );
+
+        if (date <= new Date()) {
+            date.setDate(date.getDate() + 1);
+        }
+
+        parsed = {
+            date,
+            confidence: time ? 'medium' : 'low'
+        };
+    }
 
     if (!parsed) {
         return null;
@@ -549,6 +628,23 @@ function extractReminder(text) {
     let cleanText = text;
 
     cleanText = cleanText
+        /*
+           Las marcas de repetición se quitan primero: si se
+           borrara antes el día suelto, "todos los lunes"
+           dejaría un "todos los" huérfano en la tarea.
+        */
+        .replace(
+            new RegExp(
+                `\\b(cada|todos\\s+los|todas\\s+las)\\s+` +
+                `(d[ií]as?|semanas?|mes(?:es)?|${WEEKDAY_NAMES}|miércoles|sábado)\\b`,
+                'gi'
+            ),
+            ''
+        )
+        .replace(
+            /\b(diariamente|semanalmente|mensualmente|a diario)\b/gi,
+            ''
+        )
         .replace(
             /recu[eé]rdame/gi,
             ''
@@ -582,7 +678,7 @@ function extractReminder(text) {
             ''
         )
         .replace(
-            /\bmanana\b/gi,
+            /\bma[ñn]ana\b/gi,
             ''
         )
         .replace(
@@ -641,7 +737,8 @@ function extractReminder(text) {
 
     return {
         text: cleanText,
-        date: parsed.date
+        date: parsed.date,
+        recurrence
     };
 }
 
@@ -782,6 +879,11 @@ const HELP_TEXT =
     '⏰ Recordatorios:\n' +
     '  • ⏰ Recordatorio\n' +
     '  • Escribe: "Mañana a las 9"\n\n' +
+    '🔁 Que se repitan:\n' +
+    '  • "Cada día a las 8 dar de comer"\n' +
+    '  • "Todos los lunes sacar la basura"\n' +
+    '  • "Cada mes pagar el alquiler"\n' +
+    '  • Para pararlas, botón 🚫 Dejar de repetir\n\n' +
     '🛒 Compras:\n' +
     '  • 🛒 Compras\n' +
     '  • ➕ Compra\n\n' +
@@ -878,10 +980,14 @@ bot.hears(
         await ctx.reply(
             '⏰ ESCRIBE TU RECORDATORIO\n\n' +
             'Puedes escribirlo normalmente.\n\n' +
-            'Ejemplos:\n\n' +
-            'Recuérdame mañana a las 9 llamar al banco\n\n' +
-            'En 30 minutos revisar la comida\n\n' +
-            'El viernes a las 18:30 llevar documentos',
+            'Una vez:\n' +
+            '• Mañana a las 9 llamar al banco\n' +
+            '• En 30 minutos revisar la comida\n' +
+            '• El viernes a las 18:30 llevar documentos\n\n' +
+            'Que se repita:\n' +
+            '• Cada día a las 8 dar de comer a los animales\n' +
+            '• Todos los lunes a las 9 sacar la basura\n' +
+            '• Cada mes pagar el alquiler',
             cancelMenu()
         );
     }
@@ -914,22 +1020,37 @@ bot.hears(
 
         for (const task of tasks) {
 
+            const buttons = [
+                [
+                    Markup.button.callback(
+                        '✅ Hecha',
+                        `done:${task.id}`
+                    ),
+                    Markup.button.callback(
+                        '🗑️ Eliminar',
+                        `delete:${task.id}`
+                    )
+                ]
+            ];
+
+            if (task.recurrence) {
+
+                buttons.push([
+                    Markup.button.callback(
+                        '🚫 Dejar de repetir',
+                        `stoprepeat:${task.id}`
+                    )
+                ]);
+            }
+
             await ctx.reply(
                 `📋 TAREA #${task.id}\n\n` +
                 `🔨 ${task.text}\n` +
-                `⏰ ${formatDate(task.due_at)}`,
-                Markup.inlineKeyboard([
-                    [
-                        Markup.button.callback(
-                            '✅ Hecha',
-                            `done:${task.id}`
-                        ),
-                        Markup.button.callback(
-                            '🗑️ Eliminar',
-                            `delete:${task.id}`
-                        )
-                    ]
-                ])
+                `⏰ ${formatDate(task.due_at)}` +
+                (task.recurrence
+                    ? `\n🔁 Se repite ${describeRecurrence(task.recurrence)}`
+                    : ''),
+                Markup.inlineKeyboard(buttons)
             );
         }
     }
@@ -1098,14 +1219,18 @@ bot.on(
                 const task =
                     await addTask(
                         reminder.text,
-                        reminder.date.toISOString()
+                        reminder.date.toISOString(),
+                        reminder.recurrence
                     );
 
                 await ctx.reply(
                     '⏰ RECORDATORIO CREADO\n\n' +
                     `📋 ${task.text}\n` +
-                    `📅 ${formatDate(task.due_at)}\n\n` +
-                    '🔔 Te avisaré automáticamente.',
+                    `📅 ${formatDate(task.due_at)}\n` +
+                    (task.recurrence
+                        ? `🔁 Se repite ${describeRecurrence(task.recurrence)}\n`
+                        : '') +
+                    '\n🔔 Te avisaré automáticamente.',
                     mainMenu()
                 );
 
@@ -1225,7 +1350,8 @@ bot.on(
                 const task =
                     await addTask(
                         reminder.text,
-                        reminder.date.toISOString()
+                        reminder.date.toISOString(),
+                        reminder.recurrence
                     );
 
                 sessions.delete(
@@ -1236,6 +1362,9 @@ bot.on(
                     '⏰ RECORDATORIO CREADO\n\n' +
                     `📋 ${task.text}\n` +
                     `📅 ${formatDate(task.due_at)}\n` +
+                    (task.recurrence
+                        ? `🔁 Se repite ${describeRecurrence(task.recurrence)}\n`
+                        : '') +
                     `🆔 ID: ${task.id}\n\n` +
                     '🔔 Te avisaré automáticamente.',
                     mainMenu()
@@ -1289,6 +1418,32 @@ bot.action(
             ok
                 ? `✅ Tarea #${id} completada.`
                 : '❌ La tarea no existe.'
+        );
+    }
+);
+
+bot.action(
+    /^stoprepeat:(\d+)$/,
+    async ctx => {
+
+        const id =
+            Number(ctx.match[1]);
+
+        const ok =
+            await stopRecurrence(id);
+
+        await ctx.answerCbQuery(
+            ok
+                ? 'Ya no se repetirá 🚫'
+                : 'No encontrada'
+        );
+
+        await ctx.editMessageText(
+            ok
+                ? `🚫 La tarea #${id} deja de repetirse.\n\n` +
+                  'Sigue pendiente esta vez; si tampoco la quieres, ' +
+                  'bórrala desde 📋 Mis tareas.'
+                : '❌ Esa tarea ya no existe.'
         );
     }
 );
@@ -1486,20 +1641,44 @@ async function checkReminders() {
 
             try {
 
+                /*
+                   Si se repite, se deja programada la
+                   siguiente antes de avisar, para poder
+                   decir en el mismo mensaje cuándo vuelve.
+                */
+
+                const next =
+                    await scheduleNext(task);
+
+                const buttons = [
+                    [
+                        Markup.button.callback(
+                            '✅ Completado',
+                            `done:${task.id}`
+                        )
+                    ]
+                ];
+
+                if (next) {
+
+                    buttons.push([
+                        Markup.button.callback(
+                            '🚫 Dejar de repetir',
+                            `stoprepeat:${next.id}`
+                        )
+                    ]);
+                }
+
                 await bot.telegram.sendMessage(
                     OWNER_ID,
                     '🔔 RECORDATORIO\n\n' +
                     `📋 ${task.text}\n` +
                     `⏰ ${formatDate(task.due_at)}\n` +
+                    (next
+                        ? `🔁 Siguiente: ${formatDate(next.due_at)}\n`
+                        : '') +
                     `🆔 ID: ${task.id}`,
-                    Markup.inlineKeyboard([
-                        [
-                            Markup.button.callback(
-                                '✅ Completado',
-                                `done:${task.id}`
-                            )
-                        ]
-                    ])
+                    Markup.inlineKeyboard(buttons)
                 );
 
                 await markNotified(
@@ -1507,7 +1686,8 @@ async function checkReminders() {
                 );
 
                 console.log(
-                    `✅ Recordatorio enviado #${task.id}: ${task.text}`
+                    `✅ Recordatorio enviado #${task.id}: ${task.text}` +
+                    (next ? ` (se repite el ${next.due_at})` : '')
                 );
 
             } catch (error) {

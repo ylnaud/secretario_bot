@@ -269,7 +269,7 @@ function renderModalTasks() {
           <span>📋</span>
           <div>
             <strong>${escapeHTML(task.text)}</strong>
-            <small>${task.date || "Sin fecha"}</small>
+            <small>${task.date || "Sin fecha"}${recurrenceLabel(task.recurrence)}</small>
           </div>
         </div>
         <button onclick="completeTaskFromUI(${task.id})" title="Completar" style="
@@ -331,7 +331,7 @@ function renderTasks() {
           <span>📋</span>
           <div>
             <strong>${escapeHTML(task.text)}</strong>
-            <small>${task.date || "Sin fecha"}</small>
+            <small>${task.date || "Sin fecha"}${recurrenceLabel(task.recurrence)}</small>
           </div>
         </div>
         <button onclick="completeTaskFromUI(${task.id})" style="
@@ -725,6 +725,18 @@ function escapeHTML(text) {
 }
 
 
+// Texto de la repetición
+
+function recurrenceLabel(recurrence) {
+
+  if (recurrence === 'daily') return ' · 🔁 cada día';
+  if (recurrence === 'weekly') return ' · 🔁 cada semana';
+  if (recurrence === 'monthly') return ' · 🔁 cada mes';
+
+  return '';
+}
+
+
 // Funciones de API para completar/eliminar
 
 async function completeTaskFromUI(taskId) {
@@ -833,7 +845,8 @@ async function loadData() {
         id: t.id,
         text: t.title,
         date: t.due_at ? new Date(t.due_at).toLocaleDateString('es-ES') : '',
-        due_at: t.due_at
+        due_at: t.due_at,
+        recurrence: t.recurrence
       }));
 
     shopping = (shoppingData.shopping || [])
