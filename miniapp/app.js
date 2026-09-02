@@ -83,6 +83,14 @@ function closeModal() {
 }
 
 
+function closeModalAndReset() {
+
+  closeModal();
+
+  setActiveNav(document.querySelectorAll(".nav-item")[0]);
+}
+
+
 // Nueva tarea
 
 function newTask() {
@@ -171,6 +179,8 @@ function showTasks() {
       </button>
     `
   );
+
+  setActiveNav(document.querySelectorAll(".nav-item")[1]);
 
   renderModalTasks();
 }
@@ -355,6 +365,8 @@ function showShopping() {
     `
   );
 
+  setActiveNav(document.querySelectorAll(".nav-item")[3]);
+
   renderShopping();
 }
 
@@ -491,11 +503,26 @@ function renderShoppingMain() {
 }
 
 
+// Navegación activa
+
+function setActiveNav(button) {
+  document.querySelectorAll(".nav-item").forEach(item => {
+    item.classList.remove("active");
+  });
+
+  if (button) {
+    button.classList.add("active");
+  }
+}
+
+
 // Inicio
 
 function home() {
 
   closeModal();
+
+  setActiveNav(document.querySelectorAll(".nav-item")[0]);
 
   window.scrollTo({
     top: 0,
@@ -524,6 +551,8 @@ function showSettings() {
       </div>
     `
   );
+
+  setActiveNav(document.querySelectorAll(".nav-item")[4]);
 }
 
 
