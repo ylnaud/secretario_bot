@@ -1,20 +1,64 @@
 /*
  * SECRETARIO PERSONAL
- * Telegram Mini App V1
+ * Telegram Mini App V2
  *
- * Esta primera versión contiene la interfaz.
- * En la siguiente fase conectaremos los datos reales
- * de bot.js / backend.
+ * Conectado con API Backend
  */
 
+// Configuración API
+const API_URL = window.location.origin;
 
 // Telegram Web App
-
 const tg = window.Telegram?.WebApp;
 
 if (tg) {
   tg.ready();
   tg.expand();
+}
+
+// Estado de sincronización
+let isLoading = false;
+let lastError = null;
+
+// Obtener header de autenticación de Telegram
+async function getApiHeaders() {
+  const initData = tg?.initData || '';
+
+  return {
+    'Content-Type': 'application/json',
+    'x-telegram-init-data': initData
+  };
+}
+
+// Función genérica para llamadas API
+async function apiCall(endpoint, options = {}) {
+
+  try {
+    const headers = await getApiHeaders();
+
+    const response = await fetch(
+      `${API_URL}/api/${endpoint}`,
+      {
+        ...options,
+        headers: {
+          ...headers,
+          ...options.headers
+        }
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || `Error ${response.status}`);
+    }
+
+    return await response.json();
+
+  } catch (error) {
+    console.error(`Error en ${endpoint}:`, error);
+    lastError = error.message;
+    throw error;
+  }
 }
 
 
@@ -130,34 +174,46 @@ function newTask() {
 }
 
 
-function saveTask() {
+async function saveTask() {
 
   const input = document.getElementById("taskInput");
-
   const date = document.getElementById("taskDate");
 
   if (!input.value.trim()) {
-
-    alert("Escribe una tarea.");
-
+    notify("Escribe una tarea.");
     return;
   }
 
-  tasks.push({
-    id: Date.now(),
+  try {
+    isLoading = true;
 
-    text: input.value.trim(),
+    const response = await apiCall('tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: input.value.trim(),
+        due_at: date.value ? new Date(date.value).toISOString() : null
+      })
+    });
 
-    date: date.value
-  });
+    const newTask = response.task;
 
-  updateSummary();
+    tasks.push({
+      id: newTask.id,
+      text: newTask.title,
+      date: date.value,
+      due_at: newTask.due_at
+    });
 
-  renderTasks();
+    updateSummary();
+    renderTasks();
+    closeModal();
+    notify("Tarea creada ✅");
 
-  closeModal();
-
-  notify("Tarea creada ✅");
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  } finally {
+    isLoading = false;
+  }
 }
 
 
@@ -208,18 +264,34 @@ function renderModalTasks() {
   container.innerHTML =
     tasks.map(task => `
 
-      <div class="action">
-
-        <span>📋</span>
-
-        <div>
-          <strong>${escapeHTML(task.text)}</strong>
-
-          <small>
-            ${task.date || "Sin fecha"}
-          </small>
+      <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+        <div class="action" style="flex: 1;">
+          <span>📋</span>
+          <div>
+            <strong>${escapeHTML(task.text)}</strong>
+            <small>${task.date || "Sin fecha"}</small>
+          </div>
         </div>
-
+        <button onclick="completeTaskFromUI(${task.id})" title="Completar" style="
+          background: #10b981;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+          white-space: nowrap;
+        ">✅</button>
+        <button onclick="deleteTaskFromUI(${task.id})" title="Eliminar" style="
+          background: #ef4444;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+          white-space: nowrap;
+        ">🗑️</button>
       </div>
 
     `).join("");
@@ -254,18 +326,32 @@ function renderTasks() {
   container.innerHTML =
     tasks.slice(0, 5).map(task => `
 
-      <div class="action">
-
-        <span>📋</span>
-
-        <div>
-          <strong>${escapeHTML(task.text)}</strong>
-
-          <small>
-            ${task.date || "Sin fecha"}
-          </small>
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <div class="action" style="flex: 1;">
+          <span>📋</span>
+          <div>
+            <strong>${escapeHTML(task.text)}</strong>
+            <small>${task.date || "Sin fecha"}</small>
+          </div>
         </div>
-
+        <button onclick="completeTaskFromUI(${task.id})" style="
+          background: #10b981;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+        ">✅</button>
+        <button onclick="deleteTaskFromUI(${task.id})" style="
+          background: #ef4444;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+        ">🗑️</button>
       </div>
 
     `).join("");
@@ -401,31 +487,42 @@ function addShopping() {
 }
 
 
-function saveShopping() {
+async function saveShopping() {
 
-  const input =
-    document.getElementById("shoppingInput");
+  const input = document.getElementById("shoppingInput");
 
   if (!input.value.trim()) {
-
-    alert("Escribe un producto.");
-
+    notify("Escribe un producto.");
     return;
   }
 
-  shopping.push({
-    id: Date.now(),
+  try {
+    isLoading = true;
 
-    text: input.value.trim()
-  });
+    const response = await apiCall('shopping', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: input.value.trim()
+      })
+    });
 
-  updateSummary();
+    const newItem = response.item;
 
-  renderShoppingMain();
+    shopping.push({
+      id: newItem.id,
+      text: newItem.name
+    });
 
-  closeModal();
+    updateSummary();
+    renderShoppingMain();
+    closeModal();
+    notify("Compra añadida ✅");
 
-  notify("Producto añadido 🛒");
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  } finally {
+    isLoading = false;
+  }
 }
 
 
@@ -451,15 +548,34 @@ function renderShopping() {
   container.innerHTML =
     shopping.map(item => `
 
-      <div class="action">
-
-        <span>🛒</span>
-
-        <div>
-          <strong>${escapeHTML(item.text)}</strong>
-          <small>Pendiente</small>
+      <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+        <div class="action" style="flex: 1;">
+          <span>🛒</span>
+          <div>
+            <strong>${escapeHTML(item.text)}</strong>
+            <small>Pendiente</small>
+          </div>
         </div>
-
+        <button onclick="completeShoppingFromUI(${item.id})" title="Completar" style="
+          background: #10b981;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+          white-space: nowrap;
+        ">✅</button>
+        <button onclick="deleteShoppingFromUI(${item.id})" title="Eliminar" style="
+          background: #ef4444;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+          white-space: nowrap;
+        ">🗑️</button>
       </div>
 
     `).join("");
@@ -488,15 +604,32 @@ function renderShoppingMain() {
   container.innerHTML =
     shopping.slice(0, 5).map(item => `
 
-      <div class="action">
-
-        <span>🛒</span>
-
-        <div>
-          <strong>${escapeHTML(item.text)}</strong>
-          <small>Pendiente</small>
+      <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+        <div class="action" style="flex: 1;">
+          <span>🛒</span>
+          <div>
+            <strong>${escapeHTML(item.text)}</strong>
+            <small>Pendiente</small>
+          </div>
         </div>
-
+        <button onclick="completeShoppingFromUI(${item.id})" style="
+          background: #10b981;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+        ">✅</button>
+        <button onclick="deleteShoppingFromUI(${item.id})" style="
+          background: #ef4444;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+        ">🗑️</button>
       </div>
 
     `).join("");
@@ -592,10 +725,118 @@ function escapeHTML(text) {
 }
 
 
+// Funciones de API para completar/eliminar
+
+async function completeTaskFromUI(taskId) {
+
+  try {
+    await apiCall(`tasks/${taskId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ completed: true })
+    });
+
+    tasks = tasks.filter(t => t.id !== taskId);
+    updateSummary();
+    renderTasks();
+    notify('Tarea completada ✅');
+
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  }
+}
+
+async function deleteTaskFromUI(taskId) {
+
+  try {
+    await apiCall(`tasks/${taskId}`, {
+      method: 'DELETE'
+    });
+
+    tasks = tasks.filter(t => t.id !== taskId);
+    updateSummary();
+    renderTasks();
+    notify('Tarea eliminada 🗑️');
+
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  }
+}
+
+async function completeShoppingFromUI(itemId) {
+
+  try {
+    await apiCall(`shopping/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ completed: true })
+    });
+
+    shopping = shopping.filter(s => s.id !== itemId);
+    updateSummary();
+    renderShoppingMain();
+    notify('Compra marcada como completada ✅');
+
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  }
+}
+
+async function deleteShoppingFromUI(itemId) {
+
+  try {
+    await apiCall(`shopping/${itemId}`, {
+      method: 'DELETE'
+    });
+
+    shopping = shopping.filter(s => s.id !== itemId);
+    updateSummary();
+    renderShoppingMain();
+    notify('Compra eliminada 🗑️');
+
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  }
+}
+
+// Cargar datos iniciales desde API
+
+async function loadData() {
+
+  try {
+    isLoading = true;
+
+    const [tasksData, shoppingData] = await Promise.all([
+      apiCall('tasks'),
+      apiCall('shopping')
+    ]);
+
+    tasks = (tasksData.tasks || [])
+      .filter(t => !t.completed)
+      .map(t => ({
+        id: t.id,
+        text: t.title,
+        date: t.due_at ? new Date(t.due_at).toLocaleDateString('es-ES') : '',
+        due_at: t.due_at
+      }));
+
+    shopping = (shoppingData.shopping || [])
+      .filter(s => !s.completed)
+      .map(s => ({
+        id: s.id,
+        text: s.name
+      }));
+
+    updateSummary();
+    renderTasks();
+    renderShoppingMain();
+
+  } catch (error) {
+    console.error('Error cargando datos:', error);
+    notify('⚠️ No se pudieron cargar los datos del servidor');
+  } finally {
+    isLoading = false;
+  }
+}
+
 // Inicializar
 
-renderTasks();
-
-renderShoppingMain();
-
-updateSummary();
+loadData();
