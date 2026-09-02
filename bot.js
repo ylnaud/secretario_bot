@@ -32,9 +32,13 @@ if (!OWNER_ID) {
     process.exit(1);
 }
 
+const RATE_LIMIT_WINDOW = 60 * 1000;
+const RATE_LIMIT_MAX = 20;
+
 const bot = new Telegraf(BOT_TOKEN);
 
 const sessions = new Map();
+const rateLimits = new Map();
 
 function authorized(ctx) {
 
@@ -44,19 +48,59 @@ function authorized(ctx) {
     );
 }
 
+function checkRateLimit(ctx) {
+
+    const userId = ctx.from?.id;
+
+    if (!userId) return false;
+
+    const now = Date.now();
+
+    if (!rateLimits.has(userId)) {
+        rateLimits.set(userId, []);
+    }
+
+    const userRequests = rateLimits.get(userId);
+
+    const recentRequests = userRequests.filter(
+        time => now - time < RATE_LIMIT_WINDOW
+    );
+
+    if (recentRequests.length >= RATE_LIMIT_MAX) {
+        return false;
+    }
+
+    recentRequests.push(now);
+
+    rateLimits.set(userId, recentRequests);
+
+    return true;
+}
+
+function sanitizeText(text) {
+
+    if (!text) return '';
+
+    return String(text)
+        .trim()
+        .slice(0, 500)
+        .replace(/[<>]/g, '');
+}
+
 function mainMenu() {
 
     return Markup.keyboard([
         ['➕ Nueva tarea', '📋 Mis tareas'],
         ['⏰ Recordatorio', '🛒 Compras'],
-        ['➕ Añadir compra', '📊 Resumen']
+        ['➕ Compra', '📊 Resumen'],
+        ['❓ Ayuda', '🏠 Inicio']
     ]).resize();
 }
 
 function cancelMenu() {
 
     return Markup.keyboard([
-        ['❌ Cancelar']
+        ['❌ Cancelar', '🏠 Inicio']
     ]).resize();
 }
 
@@ -586,28 +630,99 @@ function extractReminder(text) {
     };
 }
 
-/*
-====================================================
-START
-====================================================
-*/
+bot.use((ctx, next) => {
 
-bot.start(async ctx => {
+    if (!checkRateLimit(ctx)) {
 
-    if (!authorized(ctx)) {
-
-        await ctx.reply(
-            '⛔ Este secretario es privado.'
+        console.warn(
+            `⚠️  Rate limit excedido para usuario ${ctx.from?.id}`
         );
 
         return;
     }
 
+    return next();
+});
+
+bot.use((ctx, next) => {
+
+    if (!authorized(ctx)) {
+
+        ctx.reply(
+            '⛔ Acceso denegado. Este secretario es privado.'
+        ).catch(err => {
+            console.error('Error enviando denegación:', err.message);
+        });
+
+        return;
+    }
+
+    return next();
+});
+
+/*
+====================================================
+COMANDOS
+====================================================
+*/
+
+bot.start(async ctx => {
+
+    const taskCount = getPendingTasks().length;
+    const shoppingCount = getShopping().length;
+
     await ctx.reply(
         '🤖 SECRETARIO PERSONAL V3\n\n' +
-        'Estoy listo para ayudarte.\n\n' +
-        'Puedes escribirme recordatorios ' +
-        'en lenguaje normal.',
+        '¡Hola! Estoy listo para ayudarte.\n\n' +
+        `📊 Estado actual:\n` +
+        `📋 Tareas pendientes: ${taskCount}\n` +
+        `🛒 Artículos de compra: ${shoppingCount}\n\n` +
+        'Escribe /help para ver comandos disponibles.',
+        mainMenu()
+    );
+});
+
+bot.command('help', async ctx => {
+
+    await ctx.reply(
+        '❓ COMANDOS DISPONIBLES\n\n' +
+        '📋 Tareas:\n' +
+        '  • ➕ Nueva tarea\n' +
+        '  • 📋 Mis tareas\n\n' +
+        '⏰ Recordatorios:\n' +
+        '  • ⏰ Recordatorio\n' +
+        '  • Escribe: "Mañana a las 9"\n\n' +
+        '🛒 Compras:\n' +
+        '  • 🛒 Compras\n' +
+        '  • ➕ Compra\n\n' +
+        '📊 Otros:\n' +
+        '  • /help - Este mensaje\n' +
+        '  • /id - Tu ID de usuario\n' +
+        '  • 📊 Resumen - Estadísticas\n' +
+        '  • 🏠 Inicio - Menú principal',
+        mainMenu()
+    );
+});
+
+bot.command('id', async ctx => {
+
+    await ctx.reply(
+        `🆔 Tu ID de usuario es:\n\n<code>${ctx.from.id}</code>`,
+        {
+            parse_mode: 'HTML'
+        }
+    );
+});
+
+bot.hears('🏠 Inicio', async ctx => {
+
+    sessions.delete(ctx.from.id);
+
+    const taskCount = getPendingTasks().length;
+
+    await ctx.reply(
+        `🏠 Volviendo al inicio...\n\n` +
+        `📋 Tareas pendientes: ${taskCount}`,
         mainMenu()
     );
 });
@@ -622,8 +737,6 @@ bot.hears(
     '➕ Nueva tarea',
     async ctx => {
 
-        if (!authorized(ctx)) return;
-
         sessions.set(
             ctx.from.id,
             {
@@ -632,9 +745,12 @@ bot.hears(
         );
 
         await ctx.reply(
-            '📝 ¿Qué tarea quieres guardar?\n\n' +
-            'Ejemplo:\n' +
-            'Limpiar la finca',
+            '📝 NUEVA TAREA\n\n' +
+            '¿Qué tarea quieres guardar?\n\n' +
+            'Ejemplos:\n' +
+            '• Limpiar la finca\n' +
+            '• Llamar al banco\n' +
+            '• Comprar café',
             cancelMenu()
         );
     }
@@ -907,109 +1023,141 @@ bot.on(
             return;
         }
 
-        const text =
-            ctx.message.text.trim();
+        const rawText =
+            ctx.message.text;
 
-        if (!text) return;
+        const text = sanitizeText(rawText);
 
-        /*
-          TAREA NORMAL
-        */
-
-        if (
-            session.type === 'task'
-        ) {
-
-            const task =
-                addTask(text);
-
-            sessions.delete(
-                ctx.from.id
-            );
+        if (!text) {
 
             await ctx.reply(
-                '✅ TAREA GUARDADA\n\n' +
-                `📋 ${task.text}`,
-                mainMenu()
+                '⚠️  Por favor, escribe algo válido.'
             );
 
             return;
         }
 
-        /*
-          COMPRA
-        */
+        try {
 
-        if (
-            session.type === 'shopping'
-        ) {
-
-            addShopping(text);
-
-            sessions.delete(
-                ctx.from.id
-            );
-
-            await ctx.reply(
-                `🛒 Añadido:\n\n${text}`,
-                mainMenu()
-            );
-
-            return;
-        }
-
-        /*
-          RECORDATORIO NATURAL
-        */
-
-        if (
-            session.type === 'natural_reminder'
-        ) {
-
-            const reminder =
-                extractReminder(text);
-
-            if (!reminder) {
-
-                await ctx.reply(
-                    '❌ No pude entender la fecha/hora.\n\n' +
-                    'Prueba por ejemplo:\n\n' +
-                    'Mañana a las 9 llamar al banco\n\n' +
-                    'o\n\n' +
-                    'En 30 minutos revisar la comida'
-                );
-
-                return;
-            }
+            /*
+              TAREA NORMAL
+            */
 
             if (
-                reminder.date <= new Date()
+                session.type === 'task'
             ) {
 
+                const task =
+                    addTask(text);
+
+                sessions.delete(
+                    ctx.from.id
+                );
+
                 await ctx.reply(
-                    '❌ Esa fecha/hora ya pasó.\n\n' +
-                    'Escribe una fecha futura.'
+                    '✅ TAREA GUARDADA\n\n' +
+                    `📋 ${task.text}\n\n` +
+                    `🆔 ID: ${task.id}`,
+                    mainMenu()
                 );
 
                 return;
             }
 
-            const task =
-                addTask(
-                    reminder.text,
-                    reminder.date.toISOString()
+            /*
+              COMPRA
+            */
+
+            if (
+                session.type === 'shopping'
+            ) {
+
+                addShopping(text);
+
+                sessions.delete(
+                    ctx.from.id
                 );
 
-            sessions.delete(
-                ctx.from.id
+                await ctx.reply(
+                    `✅ COMPRA AÑADIDA\n\n` +
+                    `🛒 ${text}`,
+                    mainMenu()
+                );
+
+                return;
+            }
+
+            /*
+              RECORDATORIO NATURAL
+            */
+
+            if (
+                session.type === 'natural_reminder'
+            ) {
+
+                const reminder =
+                    extractReminder(text);
+
+                if (!reminder) {
+
+                    await ctx.reply(
+                        '❌ No pude entender la fecha/hora.\n\n' +
+                        'Prueba por ejemplo:\n\n' +
+                        '• Mañana a las 9 llamar al banco\n' +
+                        '• En 30 minutos revisar la comida\n' +
+                        '• El viernes a las 18:30\n' +
+                        '• 2026-09-05 14:30'
+                    );
+
+                    return;
+                }
+
+                if (
+                    reminder.date <= new Date()
+                ) {
+
+                    await ctx.reply(
+                        '❌ Esa fecha/hora ya pasó.\n\n' +
+                        'Escribe una fecha futura.'
+                    );
+
+                    return;
+                }
+
+                const task =
+                    addTask(
+                        reminder.text,
+                        reminder.date.toISOString()
+                    );
+
+                sessions.delete(
+                    ctx.from.id
+                );
+
+                await ctx.reply(
+                    '⏰ RECORDATORIO CREADO\n\n' +
+                    `📋 ${task.text}\n` +
+                    `📅 ${formatDate(task.due_at)}\n` +
+                    `🆔 ID: ${task.id}\n\n` +
+                    '🔔 Te avisaré automáticamente.',
+                    mainMenu()
+                );
+            }
+
+        } catch (error) {
+
+            console.error(
+                'Error procesando texto:',
+                error
             );
 
             await ctx.reply(
-                '⏰ RECORDATORIO CREADO\n\n' +
-                `📋 ${task.text}\n` +
-                `📅 ${formatDate(task.due_at)}\n\n` +
-                '🔔 Te avisaré automáticamente.',
+                '❌ Ocurrió un error. Intenta de nuevo.',
                 mainMenu()
+            );
+
+            sessions.delete(
+                ctx.from.id
             );
         }
     }
@@ -1051,7 +1199,33 @@ bot.action(
     /^delete:(\d+)$/,
     async ctx => {
 
-        if (!authorized(ctx)) return;
+        const id =
+            Number(ctx.match[1]);
+
+        await ctx.answerCbQuery();
+
+        await ctx.editMessageText(
+            `🗑️ ¿Eliminar tarea #${id}?\n\n` +
+            '(Esta acción no se puede deshacer)',
+            Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(
+                        '✅ Sí, eliminar',
+                        `confirm_delete:${id}`
+                    ),
+                    Markup.button.callback(
+                        '❌ Cancelar',
+                        `cancel_delete:${id}`
+                    )
+                ]
+            ])
+        );
+    }
+);
+
+bot.action(
+    /^confirm_delete:(\d+)$/,
+    async ctx => {
 
         const id =
             Number(ctx.match[1]);
@@ -1059,11 +1233,28 @@ bot.action(
         deleteTask(id);
 
         await ctx.answerCbQuery(
-            'Eliminada 🗑️'
+            'Tarea eliminada 🗑️'
         );
 
         await ctx.editMessageText(
-            `🗑️ Tarea #${id} eliminada.`
+            `✅ Tarea #${id} eliminada.`
+        );
+    }
+);
+
+bot.action(
+    /^cancel_delete:(\d+)$/,
+    async ctx => {
+
+        const id =
+            Number(ctx.match[1]);
+
+        await ctx.answerCbQuery(
+            'Cancelado ❌'
+        );
+
+        await ctx.editMessageText(
+            `📋 TAREA #${id}\n\nOperación cancelada.`
         );
     }
 );
@@ -1093,7 +1284,33 @@ bot.action(
     /^shopdelete:(\d+)$/,
     async ctx => {
 
-        if (!authorized(ctx)) return;
+        const id =
+            Number(ctx.match[1]);
+
+        await ctx.answerCbQuery();
+
+        await ctx.editMessageText(
+            `🗑️ ¿Eliminar esta compra (#${id})?\n\n` +
+            '(Esta acción no se puede deshacer)',
+            Markup.inlineKeyboard([
+                [
+                    Markup.button.callback(
+                        '✅ Sí, eliminar',
+                        `confirm_shopdelete:${id}`
+                    ),
+                    Markup.button.callback(
+                        '❌ Cancelar',
+                        `cancel_shopdelete:${id}`
+                    )
+                ]
+            ])
+        );
+    }
+);
+
+bot.action(
+    /^confirm_shopdelete:(\d+)$/,
+    async ctx => {
 
         const id =
             Number(ctx.match[1]);
@@ -1101,11 +1318,28 @@ bot.action(
         deleteShopping(id);
 
         await ctx.answerCbQuery(
-            'Eliminado 🗑️'
+            'Compra eliminada 🗑️'
         );
 
         await ctx.editMessageText(
-            '🗑️ Compra eliminada.'
+            `✅ Compra #${id} eliminada.`
+        );
+    }
+);
+
+bot.action(
+    /^cancel_shopdelete:(\d+)$/,
+    async ctx => {
+
+        const id =
+            Number(ctx.match[1]);
+
+        await ctx.answerCbQuery(
+            'Cancelado ❌'
+        );
+
+        await ctx.editMessageText(
+            `🛒 COMPRA #${id}\n\nOperación cancelada.`
         );
     }
 );
@@ -1141,6 +1375,15 @@ async function checkReminders() {
         const tasks =
             getDueTasks();
 
+        if (tasks.length === 0) {
+            checkingReminders = false;
+            return;
+        }
+
+        console.log(
+            `⏰ Comprobando recordatorios: ${tasks.length} pendiente(s)`
+        );
+
         for (const task of tasks) {
 
             try {
@@ -1148,9 +1391,17 @@ async function checkReminders() {
                 await bot.telegram.sendMessage(
                     OWNER_ID,
                     '🔔 RECORDATORIO\n\n' +
-                    `📋 ${task.text}\n\n` +
-                    `⏰ ${formatDate(task.due_at)}`,
-                    mainMenu()
+                    `📋 ${task.text}\n` +
+                    `⏰ ${formatDate(task.due_at)}\n` +
+                    `🆔 ID: ${task.id}`,
+                    Markup.inlineKeyboard([
+                        [
+                            Markup.button.callback(
+                                '✅ Completado',
+                                `done:${task.id}`
+                            )
+                        ]
+                    ])
                 );
 
                 markNotified(
@@ -1158,7 +1409,7 @@ async function checkReminders() {
                 );
 
                 console.log(
-                    `🔔 Recordatorio enviado #${task.id}`
+                    `✅ Recordatorio enviado #${task.id}: ${task.text}`
                 );
 
             } catch (error) {
@@ -1201,35 +1452,60 @@ ARRANQUE
 ====================================================
 */
 
-bot.catch(error => {
+bot.catch((err, ctx) => {
 
     console.error(
-        '❌ Error del bot:',
-        error
+        `❌ Error del bot (usuario ${ctx.from?.id}):`,
+        err.message || err
     );
+
+    ctx.reply(
+        '❌ Ocurrió un error inesperado.\n\n' +
+        'Por favor intenta de nuevo o escribe /help'
+    ).catch(replyErr => {
+        console.error('Error enviando mensaje de error:', replyErr.message);
+    });
 });
 
-bot.launch();
+bot.launch().then(() => {
 
-console.log(
-    '======================================'
-);
+    console.log(
+        '======================================'
+    );
 
-console.log(
-    '🤖 SECRETARIO PERSONAL V3 ENCENDIDO'
-);
+    console.log(
+        '🤖 SECRETARIO PERSONAL V3 ENCENDIDO'
+    );
 
-console.log(
-    `👤 Propietario: ${OWNER_ID}`
-);
+    console.log(
+        `👤 Propietario: ${OWNER_ID}`
+    );
 
-console.log(
-    '⏰ Recordatorios: comprobación cada 5 segundos'
-);
+    console.log(
+        `⏰ Recordatorios: cada 5 segundos`
+    );
 
-console.log(
-    '======================================'
-);
+    console.log(
+        `📊 Rate limit: ${RATE_LIMIT_MAX} requests/${RATE_LIMIT_WINDOW/1000}s`
+    );
+
+    console.log(
+        '======================================'
+    );
+
+    console.log(
+        `✅ Hora de inicio: ${new Date().toLocaleString('es-ES')}`
+    );
+
+}).catch(err => {
+
+    console.error(
+        '❌ Error al lanzar el bot:',
+        err.message
+    );
+
+    process.exit(1);
+});
 
 process.once(
     'SIGINT',
