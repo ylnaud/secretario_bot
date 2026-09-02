@@ -219,7 +219,7 @@ async function saveTask() {
     });
 
     updateSummary();
-    renderTasks();
+    refrescarTareas();
     closeModal();
     notify("Tarea creada ✅");
 
@@ -309,6 +309,26 @@ function renderModalTasks() {
       </div>
 
     `).join("");
+}
+
+
+/*
+ * La misma lista se pinta en dos sitios: la portada y el
+ * modal. Tras cambiar algo hay que refrescar las dos, o lo
+ * borrado sigue viéndose donde no se repintó. Cada render
+ * comprueba si su contenedor existe, así que llamar a los
+ * dos siempre es seguro.
+ */
+
+function refrescarTareas() {
+  renderTasks();
+  renderModalTasks();
+}
+
+
+function refrescarCompras() {
+  renderShoppingMain();
+  renderShopping();
 }
 
 
@@ -482,7 +502,7 @@ async function saveReminder() {
     });
 
     updateSummary();
-    renderTasks();
+    refrescarTareas();
     closeModal();
     notify("Recordatorio creado ⏰");
 
@@ -578,7 +598,7 @@ async function saveShopping() {
     });
 
     updateSummary();
-    renderShoppingMain();
+    refrescarCompras();
     closeModal();
     notify("Compra añadida ✅");
 
@@ -813,7 +833,7 @@ async function completeTaskFromUI(taskId) {
 
     tasks = tasks.filter(t => t.id !== taskId);
     updateSummary();
-    renderTasks();
+    refrescarTareas();
     notify('Tarea completada ✅');
 
   } catch (error) {
@@ -830,7 +850,7 @@ async function deleteTaskFromUI(taskId) {
 
     tasks = tasks.filter(t => t.id !== taskId);
     updateSummary();
-    renderTasks();
+    refrescarTareas();
     notify('Tarea eliminada 🗑️');
 
   } catch (error) {
@@ -848,7 +868,7 @@ async function completeShoppingFromUI(itemId) {
 
     shopping = shopping.filter(s => s.id !== itemId);
     updateSummary();
-    renderShoppingMain();
+    refrescarCompras();
     notify('Compra marcada como completada ✅');
 
   } catch (error) {
@@ -865,7 +885,7 @@ async function deleteShoppingFromUI(itemId) {
 
     shopping = shopping.filter(s => s.id !== itemId);
     updateSummary();
-    renderShoppingMain();
+    refrescarCompras();
     notify('Compra eliminada 🗑️');
 
   } catch (error) {
@@ -921,8 +941,8 @@ async function loadData() {
       }));
 
     updateSummary();
-    renderTasks();
-    renderShoppingMain();
+    refrescarTareas();
+    refrescarCompras();
 
   } catch (error) {
     console.error('Error cargando datos:', error);
