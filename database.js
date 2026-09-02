@@ -1,241 +1,283 @@
-const fs = require('fs');
-const path = require('path');
+/*
+ * BASE DE DATOS COMPARTIDA (PostgreSQL / Neon)
+ *
+ * El bot (Termux) y la Mini App (Vercel) usan ESTA misma base
+ * de datos, así que las tareas y compras se ven en los dos sitios.
+ *
+ * Neon viaja por HTTP, no por TCP, así que funciona en Termux
+ * sin abrir puertos ni túneles.
+ *
+ * Las funciones devuelven los campos con los nombres que usa el
+ * bot (text, done, item) aunque en la tabla se llamen title,
+ * completed y name.
+ */
 
-const DATA_DIR = path.join(__dirname, 'data');
-const FILE = path.join(DATA_DIR, 'database.json');
+const sql = require('./lib/db');
 
-if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+const OWNER_ID = String(process.env.OWNER_ID || '');
 
-function createEmptyDatabase() {
-    return {
-        tasks: [],
-        shopping: [],
-        nextTaskId: 1,
-        nextShoppingId: 1
-    };
-}
+let ownerUserId = null;
 
-function load() {
-    if (!fs.existsSync(FILE)) {
-        const data = createEmptyDatabase();
-        save(data);
-        return data;
+/*
+====================================================
+USUARIO PROPIETARIO
+====================================================
+
+La Mini App crea el usuario a partir del initData de
+Telegram. El bot crea (o reutiliza) esa misma fila
+buscando por telegram_id, así ambos comparten datos.
+*/
+
+async function getOwnerUserId() {
+
+    if (ownerUserId) {
+        return ownerUserId;
     }
 
-    try {
-        return JSON.parse(
-            fs.readFileSync(FILE, 'utf8')
-        );
-    } catch (error) {
-        console.error(
-            '⚠️ Base de datos dañada. Creando una nueva.'
-        );
-
-        const data = createEmptyDatabase();
-        save(data);
-
-        return data;
+    if (!OWNER_ID) {
+        throw new Error('OWNER_ID no está configurado');
     }
+
+    const rows = await sql`
+        INSERT INTO users (telegram_id)
+        VALUES (${OWNER_ID})
+        ON CONFLICT (telegram_id)
+        DO UPDATE SET updated_at = NOW()
+        RETURNING id
+    `;
+
+    ownerUserId = rows[0].id;
+
+    return ownerUserId;
 }
 
-function save(data) {
-    const temporary = `${FILE}.tmp`;
+/*
+====================================================
+TRADUCCIÓN DE FILAS
+====================================================
+*/
 
-    fs.writeFileSync(
-        temporary,
-        JSON.stringify(data, null, 2),
-        'utf8'
-    );
-
-    fs.renameSync(
-        temporary,
-        FILE
-    );
-}
-
-function addTask(text, dueAt = null) {
-
-    const data = load();
-
-    const task = {
-        id: data.nextTaskId++,
-        text,
-        due_at: dueAt,
-        done: false,
-        notified: false,
-        created_at: new Date().toISOString()
-    };
-
-    data.tasks.push(task);
-
-    save(data);
-
-    return task;
-}
-
-function getPendingTasks() {
-
-    const data = load();
-
-    return data.tasks
-        .filter(task => !task.done)
-        .sort((a, b) => {
-
-            if (!a.due_at && !b.due_at) {
-                return b.id - a.id;
-            }
-
-            if (!a.due_at) return 1;
-            if (!b.due_at) return -1;
-
-            return new Date(a.due_at) -
-                   new Date(b.due_at);
-        });
-}
-
-function getDueTasks() {
-
-    const data = load();
-
-    const now = Date.now();
-
-    return data.tasks.filter(task => {
-
-        if (task.done) return false;
-        if (task.notified) return false;
-        if (!task.due_at) return false;
-
-        return new Date(task.due_at).getTime() <= now;
-    });
-}
-
-function markNotified(id) {
-
-    const data = load();
-
-    const task = data.tasks.find(
-        task => task.id === Number(id)
-    );
-
-    if (!task) return false;
-
-    task.notified = true;
-
-    save(data);
-
-    return true;
-}
-
-function completeTask(id) {
-
-    const data = load();
-
-    const task = data.tasks.find(
-        task => task.id === Number(id)
-    );
-
-    if (!task) return false;
-
-    task.done = true;
-
-    save(data);
-
-    return true;
-}
-
-function deleteTask(id) {
-
-    const data = load();
-
-    data.tasks = data.tasks.filter(
-        task => task.id !== Number(id)
-    );
-
-    save(data);
-}
-
-function addShopping(item) {
-
-    const data = load();
-
-    const product = {
-        id: data.nextShoppingId++,
-        item,
-        done: false,
-        created_at: new Date().toISOString()
-    };
-
-    data.shopping.push(product);
-
-    save(data);
-
-    return product;
-}
-
-function getShopping() {
-
-    const data = load();
-
-    return data.shopping.filter(
-        item => !item.done
-    );
-}
-
-function completeShopping(id) {
-
-    const data = load();
-
-    const item = data.shopping.find(
-        item => item.id === Number(id)
-    );
-
-    if (!item) return false;
-
-    item.done = true;
-
-    save(data);
-
-    return true;
-}
-
-function deleteShopping(id) {
-
-    const data = load();
-
-    data.shopping = data.shopping.filter(
-        item => item.id !== Number(id)
-    );
-
-    save(data);
-}
-
-function getStats() {
-
-    const data = load();
+function toTask(row) {
 
     return {
-        totalTasks: data.tasks.length,
+        id: row.id,
+        text: row.title,
+        due_at: row.due_at,
+        done: row.completed,
+        notified: row.notified,
+        created_at: row.created_at
+    };
+}
 
-        pendingTasks:
-            data.tasks.filter(
-                task => !task.done
-            ).length,
+function toShopping(row) {
 
-        completedTasks:
-            data.tasks.filter(
-                task => task.done
-            ).length,
+    return {
+        id: row.id,
+        item: row.name,
+        done: row.completed,
+        created_at: row.created_at
+    };
+}
 
-        pendingShopping:
-            data.shopping.filter(
-                item => !item.done
-            ).length
+/*
+====================================================
+TAREAS
+====================================================
+*/
+
+async function addTask(text, dueAt = null) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        INSERT INTO tasks (user_id, title, due_at)
+        VALUES (${userId}, ${text}, ${dueAt})
+        RETURNING *
+    `;
+
+    return toTask(rows[0]);
+}
+
+async function getPendingTasks() {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        SELECT *
+        FROM tasks
+        WHERE
+            user_id = ${userId}
+            AND completed = FALSE
+        ORDER BY
+            due_at ASC NULLS LAST,
+            id DESC
+    `;
+
+    return rows.map(toTask);
+}
+
+async function getDueTasks() {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        SELECT *
+        FROM tasks
+        WHERE
+            user_id = ${userId}
+            AND completed = FALSE
+            AND notified = FALSE
+            AND due_at IS NOT NULL
+            AND due_at <= NOW()
+        ORDER BY due_at ASC
+    `;
+
+    return rows.map(toTask);
+}
+
+async function markNotified(id) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        UPDATE tasks
+        SET notified = TRUE, updated_at = NOW()
+        WHERE id = ${Number(id)} AND user_id = ${userId}
+        RETURNING id
+    `;
+
+    return rows.length > 0;
+}
+
+async function completeTask(id) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        UPDATE tasks
+        SET completed = TRUE, updated_at = NOW()
+        WHERE id = ${Number(id)} AND user_id = ${userId}
+        RETURNING id
+    `;
+
+    return rows.length > 0;
+}
+
+async function deleteTask(id) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        DELETE FROM tasks
+        WHERE id = ${Number(id)} AND user_id = ${userId}
+        RETURNING id
+    `;
+
+    return rows.length > 0;
+}
+
+/*
+====================================================
+COMPRAS
+====================================================
+*/
+
+async function addShopping(item) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        INSERT INTO shopping_items (user_id, name)
+        VALUES (${userId}, ${item})
+        RETURNING *
+    `;
+
+    return toShopping(rows[0]);
+}
+
+async function getShopping() {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        SELECT *
+        FROM shopping_items
+        WHERE
+            user_id = ${userId}
+            AND completed = FALSE
+        ORDER BY created_at DESC
+    `;
+
+    return rows.map(toShopping);
+}
+
+async function completeShopping(id) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        UPDATE shopping_items
+        SET completed = TRUE, updated_at = NOW()
+        WHERE id = ${Number(id)} AND user_id = ${userId}
+        RETURNING id
+    `;
+
+    return rows.length > 0;
+}
+
+async function deleteShopping(id) {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        DELETE FROM shopping_items
+        WHERE id = ${Number(id)} AND user_id = ${userId}
+        RETURNING id
+    `;
+
+    return rows.length > 0;
+}
+
+/*
+====================================================
+ESTADÍSTICAS
+====================================================
+*/
+
+async function getStats() {
+
+    const userId = await getOwnerUserId();
+
+    const rows = await sql`
+        SELECT
+            (SELECT COUNT(*) FROM tasks
+             WHERE user_id = ${userId}) AS total_tasks,
+
+            (SELECT COUNT(*) FROM tasks
+             WHERE user_id = ${userId}
+             AND completed = FALSE) AS pending_tasks,
+
+            (SELECT COUNT(*) FROM tasks
+             WHERE user_id = ${userId}
+             AND completed = TRUE) AS completed_tasks,
+
+            (SELECT COUNT(*) FROM shopping_items
+             WHERE user_id = ${userId}
+             AND completed = FALSE) AS pending_shopping
+    `;
+
+    const row = rows[0];
+
+    return {
+        totalTasks: Number(row.total_tasks),
+        pendingTasks: Number(row.pending_tasks),
+        completedTasks: Number(row.completed_tasks),
+        pendingShopping: Number(row.pending_shopping)
     };
 }
 
 module.exports = {
+    getOwnerUserId,
     addTask,
     getPendingTasks,
     getDueTasks,

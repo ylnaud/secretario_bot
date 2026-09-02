@@ -157,30 +157,37 @@ https://secretario-bot.vercel.app
 
 ## PASO 6: Ejecutar el Bot
 
-El bot puede ejecutarse en:
-- **Opción A:** Localmente en tu computadora (durante desarrollo)
-- **Opción B:** En un servidor 24/7 (producción)
-- **Opción C:** En Railway, Render, Heroku, etc.
-
-### 6.1 Ejecución Local
+### 6.1 Crear las tablas (solo la primera vez)
 
 ```bash
-# Instalar dependencias
 npm install
+npm run init-db
+```
 
-# Ejecutar bot
+Si ya venías usando el bot con la base de datos local en JSON,
+sube esos datos con:
+
+```bash
+npm run migrate
+```
+
+### 6.2 Arrancar
+
+```bash
 npm start
 ```
 
 El bot estará escuchando comandos de Telegram.
 
-### 6.2 Ejecución en Servidor (24/7)
+### 6.3 Dónde ejecutarlo
 
-Usa un servicio como:
-- **Railway** (recomendado): https://railway.app
-- **Render**: https://render.com
-- **Fly.io**: https://fly.io
-- **Heroku**: https://heroku.com
+- **Termux (Android):** ver [TERMUX.md](TERMUX.md) — wake lock,
+  arranque automático y consumo de batería
+- **Tu ordenador:** durante el desarrollo
+- **Un servidor 24/7:** Railway, Render, Fly.io
+
+⚠️ El bot necesita un proceso vivo permanentemente, por eso no va
+en Vercel: allí solo vive la API y la Mini App.
 
 ---
 
@@ -293,17 +300,25 @@ curl -X POST \
 
 ```
 .env                          - Variables de entorno (NO commitear)
-bot.js                        - Bot de Telegram (ejecutable)
+bot.js                        - Bot de Telegram (proceso 24/7)
+database.js                   - Acceso a PostgreSQL desde el bot
+database-json.js              - Versión antigua en archivo local (respaldo)
 api/index.js                  - API REST (en Vercel)
 miniapp/                      - Mini App (HTML + JS + CSS)
   ├── index.html             - Interfaz
   ├── app.js                 - Lógica + conexión con API
   └── style.css              - Estilos
+db/schema.sql                 - Tablas de PostgreSQL
+lib/db.js                     - Conexión a Neon
+lib/telegram.js               - Validación del initData de Telegram
+scripts/init-db.js            - Crea las tablas
+scripts/migrate-json-to-pg.js - Sube los datos locales a PostgreSQL
 package.json                  - Dependencias
 vercel.json                   - Configuración de Vercel
-database.js                   - Funciones de BD (en memoria)
-lib/                          - Funciones auxiliares
 ```
+
+⚠️ **`DATABASE_URL` debe ser idéntico en `.env` y en Vercel.** Es lo
+que hace que el bot y la Mini App vean las mismas tareas.
 
 ---
 

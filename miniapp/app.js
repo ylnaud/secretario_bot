@@ -801,6 +801,24 @@ async function deleteShoppingFromUI(itemId) {
 
 async function loadData() {
 
+  /*
+   * Sin initData la API no puede identificar al usuario.
+   * Pasa siempre que se abre la página en un navegador normal
+   * en vez de desde el botón del bot.
+   */
+
+  if (!tg?.initData) {
+
+    document.getElementById("tasks").innerHTML = `
+      <div class="empty">
+        <div>🔒</div>
+        <p>Abre esta app desde tu bot de Telegram</p>
+      </div>
+    `;
+
+    return;
+  }
+
   try {
     isLoading = true;
 

@@ -1,11 +1,38 @@
 require('dotenv').config();
 
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const OWNER_ID = Number(process.env.OWNER_ID);
+
+/*
+   Las variables se validan ANTES de cargar la base de
+   datos, porque ./database abre la conexión al importarse
+   y así el error se explica en lugar de reventar.
+*/
+
+if (!BOT_TOKEN) {
+    console.error('❌ Falta BOT_TOKEN en .env');
+    process.exit(1);
+}
+
+if (!OWNER_ID) {
+    console.error('❌ Falta OWNER_ID en .env');
+    process.exit(1);
+}
+
+if (!process.env.DATABASE_URL) {
+    console.error('❌ Falta DATABASE_URL en .env');
+    console.error('   El bot y la Mini App comparten esta base de datos.');
+    console.error('   Crea una gratis en https://neon.tech');
+    process.exit(1);
+}
+
 const {
     Telegraf,
     Markup
 } = require('telegraf');
 
 const {
+    getOwnerUserId,
     addTask,
     getPendingTasks,
     getDueTasks,
@@ -18,19 +45,6 @@ const {
     deleteShopping,
     getStats
 } = require('./database');
-
-const BOT_TOKEN = process.env.BOT_TOKEN;
-const OWNER_ID = Number(process.env.OWNER_ID);
-
-if (!BOT_TOKEN) {
-    console.error('❌ Falta BOT_TOKEN en .env');
-    process.exit(1);
-}
-
-if (!OWNER_ID) {
-    console.error('❌ Falta OWNER_ID en .env');
-    process.exit(1);
-}
 
 const RATE_LIMIT_WINDOW = 60 * 1000;
 const RATE_LIMIT_MAX = 20;
@@ -668,8 +682,8 @@ COMANDOS
 
 bot.start(async ctx => {
 
-    const taskCount = getPendingTasks().length;
-    const shoppingCount = getShopping().length;
+    const taskCount = (await getPendingTasks()).length;
+    const shoppingCount = (await getShopping()).length;
 
     await ctx.reply(
         '🤖 SECRETARIO PERSONAL V3\n\n' +
@@ -682,26 +696,31 @@ bot.start(async ctx => {
     );
 });
 
+const HELP_TEXT =
+    '❓ COMANDOS DISPONIBLES\n\n' +
+    '📋 Tareas:\n' +
+    '  • ➕ Nueva tarea\n' +
+    '  • 📋 Mis tareas\n\n' +
+    '⏰ Recordatorios:\n' +
+    '  • ⏰ Recordatorio\n' +
+    '  • Escribe: "Mañana a las 9"\n\n' +
+    '🛒 Compras:\n' +
+    '  • 🛒 Compras\n' +
+    '  • ➕ Compra\n\n' +
+    '📊 Otros:\n' +
+    '  • /help - Este mensaje\n' +
+    '  • /id - Tu ID de usuario\n' +
+    '  • 📊 Resumen - Estadísticas\n' +
+    '  • 🏠 Inicio - Menú principal';
+
 bot.command('help', async ctx => {
 
-    await ctx.reply(
-        '❓ COMANDOS DISPONIBLES\n\n' +
-        '📋 Tareas:\n' +
-        '  • ➕ Nueva tarea\n' +
-        '  • 📋 Mis tareas\n\n' +
-        '⏰ Recordatorios:\n' +
-        '  • ⏰ Recordatorio\n' +
-        '  • Escribe: "Mañana a las 9"\n\n' +
-        '🛒 Compras:\n' +
-        '  • 🛒 Compras\n' +
-        '  • ➕ Compra\n\n' +
-        '📊 Otros:\n' +
-        '  • /help - Este mensaje\n' +
-        '  • /id - Tu ID de usuario\n' +
-        '  • 📊 Resumen - Estadísticas\n' +
-        '  • 🏠 Inicio - Menú principal',
-        mainMenu()
-    );
+    await ctx.reply(HELP_TEXT, mainMenu());
+});
+
+bot.hears('❓ Ayuda', async ctx => {
+
+    await ctx.reply(HELP_TEXT, mainMenu());
 });
 
 bot.command('id', async ctx => {
@@ -718,7 +737,7 @@ bot.hears('🏠 Inicio', async ctx => {
 
     sessions.delete(ctx.from.id);
 
-    const taskCount = getPendingTasks().length;
+    const taskCount = (await getPendingTasks()).length;
 
     await ctx.reply(
         `🏠 Volviendo al inicio...\n\n` +
@@ -800,7 +819,7 @@ bot.hears(
         if (!authorized(ctx)) return;
 
         const tasks =
-            getPendingTasks();
+            await getPendingTasks();
 
         if (!tasks.length) {
 
@@ -848,7 +867,7 @@ bot.hears(
         if (!authorized(ctx)) return;
 
         const items =
-            getShopping();
+            await getShopping();
 
         if (!items.length) {
 
@@ -888,10 +907,8 @@ AÑADIR COMPRA
 */
 
 bot.hears(
-    '➕ Añadir compra',
+    ['➕ Compra', '➕ Añadir compra'],
     async ctx => {
-
-        if (!authorized(ctx)) return;
 
         sessions.set(
             ctx.from.id,
@@ -920,7 +937,7 @@ bot.hears(
         if (!authorized(ctx)) return;
 
         const stats =
-            getStats();
+            await getStats();
 
         await ctx.reply(
             '📊 RESUMEN\n\n' +
@@ -998,7 +1015,7 @@ bot.on(
                 }
 
                 const task =
-                    addTask(
+                    await addTask(
                         reminder.text,
                         reminder.date.toISOString()
                     );
@@ -1048,7 +1065,7 @@ bot.on(
             ) {
 
                 const task =
-                    addTask(text);
+                    await addTask(text);
 
                 sessions.delete(
                     ctx.from.id
@@ -1072,7 +1089,7 @@ bot.on(
                 session.type === 'shopping'
             ) {
 
-                addShopping(text);
+                await addShopping(text);
 
                 sessions.delete(
                     ctx.from.id
@@ -1125,7 +1142,7 @@ bot.on(
                 }
 
                 const task =
-                    addTask(
+                    await addTask(
                         reminder.text,
                         reminder.date.toISOString()
                     );
@@ -1179,7 +1196,7 @@ bot.action(
             Number(ctx.match[1]);
 
         const ok =
-            completeTask(id);
+            await completeTask(id);
 
         await ctx.answerCbQuery(
             ok
@@ -1230,7 +1247,7 @@ bot.action(
         const id =
             Number(ctx.match[1]);
 
-        deleteTask(id);
+        await deleteTask(id);
 
         await ctx.answerCbQuery(
             'Tarea eliminada 🗑️'
@@ -1268,7 +1285,7 @@ bot.action(
         const id =
             Number(ctx.match[1]);
 
-        completeShopping(id);
+        await completeShopping(id);
 
         await ctx.answerCbQuery(
             'Compra completada ✅'
@@ -1315,7 +1332,7 @@ bot.action(
         const id =
             Number(ctx.match[1]);
 
-        deleteShopping(id);
+        await deleteShopping(id);
 
         await ctx.answerCbQuery(
             'Compra eliminada 🗑️'
@@ -1373,7 +1390,7 @@ async function checkReminders() {
     try {
 
         const tasks =
-            getDueTasks();
+            await getDueTasks();
 
         if (tasks.length === 0) {
             checkingReminders = false;
@@ -1404,7 +1421,7 @@ async function checkReminders() {
                     ])
                 );
 
-                markNotified(
+                await markNotified(
                     task.id
                 );
 
@@ -1435,16 +1452,16 @@ async function checkReminders() {
 }
 
 /*
-   Comprobación inicial y después
-   cada 5 segundos.
+   Comprobación inicial y después cada REMINDER_INTERVAL.
+
+   Antes eran 5 segundos porque la base de datos era un
+   archivo local. Ahora cada comprobación es una consulta
+   de red a Neon, así que 30 segundos evita gastar batería
+   y datos del móvil sin que se noten retrasos.
 */
 
-checkReminders();
-
-setInterval(
-    checkReminders,
-    5000
-);
+const REMINDER_INTERVAL =
+    Number(process.env.REMINDER_INTERVAL_MS) || 30000;
 
 /*
 ====================================================
@@ -1467,7 +1484,48 @@ bot.catch((err, ctx) => {
     });
 });
 
-bot.launch().then(() => {
+async function main() {
+
+    /*
+       Se comprueba la base de datos antes de arrancar: si
+       Neon no responde, es mejor saberlo ahora que al recibir
+       el primer mensaje.
+    */
+
+    try {
+
+        const userId = await getOwnerUserId();
+
+        console.log(
+            `🗄️  Base de datos conectada (usuario #${userId})`
+        );
+
+    } catch (error) {
+
+        console.error(
+            '❌ No se pudo conectar a la base de datos:',
+            error.message
+        );
+
+        console.error(
+            '   Revisa DATABASE_URL en .env y tu conexión a internet.'
+        );
+
+        process.exit(1);
+    }
+
+    /*
+       El motor de recordatorios usa bot.telegram, que no
+       necesita el polling activo, así que se arranca antes
+       de launch() y no depende de cuándo resuelva.
+    */
+
+    checkReminders();
+
+    setInterval(
+        checkReminders,
+        REMINDER_INTERVAL
+    );
 
     console.log(
         '======================================'
@@ -1482,11 +1540,11 @@ bot.launch().then(() => {
     );
 
     console.log(
-        `⏰ Recordatorios: cada 5 segundos`
+        `⏰ Recordatorios: cada ${REMINDER_INTERVAL / 1000} segundos`
     );
 
     console.log(
-        `📊 Rate limit: ${RATE_LIMIT_MAX} requests/${RATE_LIMIT_WINDOW/1000}s`
+        `📊 Rate limit: ${RATE_LIMIT_MAX} requests/${RATE_LIMIT_WINDOW / 1000}s`
     );
 
     console.log(
@@ -1497,7 +1555,10 @@ bot.launch().then(() => {
         `✅ Hora de inicio: ${new Date().toLocaleString('es-ES')}`
     );
 
-}).catch(err => {
+    await bot.launch();
+}
+
+main().catch(err => {
 
     console.error(
         '❌ Error al lanzar el bot:',
