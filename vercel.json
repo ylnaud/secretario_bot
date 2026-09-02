@@ -1,12 +1,37 @@
 {
-  "rewrites": [
+  "version": 2,
+
+  "builds": [
     {
-      "source": "/api/:path*",
-      "destination": "/api?path=:path*"
+      "src": "api/index.js",
+      "use": "@vercel/node"
     },
     {
-      "source": "/",
-      "destination": "/miniapp/index.html"
+      "src": "miniapp/**",
+      "use": "@vercel/static"
+    }
+  ],
+
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/index.js?path=$1"
+    },
+    {
+      "src": "/api",
+      "dest": "/api/index.js?path="
+    },
+    {
+      "src": "/",
+      "dest": "/miniapp/index.html"
+    },
+    {
+      "src": "/miniapp/(.*)",
+      "dest": "/miniapp/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/miniapp/$1"
     }
   ]
 }

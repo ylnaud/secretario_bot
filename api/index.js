@@ -21,9 +21,9 @@ function methodNotAllowed(res) {
 function getPath(req) {
 
   /*
-   * Al ser una ruta catch-all, Vercel entrega los segmentos
-   * de la URL en req.query.path (por ejemplo ['tasks', '5']).
-   * Si no vienen, se deduce de req.url.
+   * La ruta llega en la query, porque vercel.json reescribe
+   * /api/tasks/5 como /api/index.js?path=tasks/5. Una cadena
+   * vacía es válida: significa /api a secas.
    */
 
   const fromQuery = req.query && req.query.path;
@@ -32,15 +32,23 @@ function getPath(req) {
     return fromQuery.join('/');
   }
 
-  if (typeof fromQuery === 'string' && fromQuery) {
+  if (typeof fromQuery === 'string') {
     return fromQuery;
   }
+
+  /*
+   * Respaldo por si la query no llega. Se quita el prefijo
+   * /api y también el nombre del archivo, que aparece cuando
+   * la reescritura apunta directamente a él.
+   */
 
   const raw = req.url || '';
 
   const clean = raw.split('?')[0];
 
-  return clean.replace(/^\/api\/?/, '');
+  return clean
+    .replace(/^\/api\/?/, '')
+    .replace(/^index\.js$/, '');
 
 }
 
