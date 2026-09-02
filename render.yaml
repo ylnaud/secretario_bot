@@ -18,7 +18,8 @@ services:
     startCommand: npm start
 
     # Render llama a esta ruta para saber si el servicio vive.
-    healthCheckPath: /
+    # /health es más ligero que servir la Mini App entera.
+    healthCheckPath: /health
 
     envVars:
       - key: BOT_TOKEN

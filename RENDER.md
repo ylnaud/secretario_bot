@@ -1,6 +1,15 @@
-# 🚀 Mover el bot a Render
+# 🚀 Todo en Render
 
-Para dejar de depender de que el móvil esté encendido.
+Render sirve las tres cosas desde un mismo sitio:
+
+```
+https://tu-servicio.onrender.com/         → la Mini App
+https://tu-servicio.onrender.com/api/...  → la API
+                    (y el bot, en el mismo proceso)
+```
+
+Así se acaban los problemas de tener la Mini App en un sitio
+y el bot en otro, y ya no hace falta Vercel.
 
 ⚠️ **Antes de nada: para el bot de Termux.** Telegram no
 permite dos procesos leyendo los mensajes del mismo bot. Si
@@ -44,12 +53,30 @@ Pulsa **Apply**. El primer despliegue tarda un par de minutos.
 En los logs debes ver:
 
 ```
-🌐 Health check escuchando en el puerto 10000
+🌐 Web y API escuchando en el puerto 10000
 🗄️  Base de datos conectada (usuario #1)
 🤖 SECRETARIO PERSONAL V3 ENCENDIDO
 ```
 
 Escribe `/start` a tu bot para comprobarlo.
+
+### 4. Apuntar la Mini App a Render
+
+Render te dará una URL como `https://secretario-bot.onrender.com`.
+Compruébala primero en el navegador:
+
+| Dirección | Debe responder |
+|---|---|
+| `/api/health` | `{"ok":true,"service":"secretario-api",...}` |
+| `/` | la Mini App |
+
+Cuando las dos funcionen, cambia la dirección en Telegram:
+
+**@BotFather** → `/mybots` → tu bot → **Bot Settings** →
+**Menu Button** → pega la URL de Render.
+
+Desde ese momento la Mini App deja de abrirse desde Vercel, y
+puedes borrar ese proyecto si quieres.
 
 ---
 

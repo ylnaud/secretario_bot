@@ -1486,49 +1486,18 @@ bot.catch((err, ctx) => {
 
 /*
 ====================================================
-PUERTO HTTP (solo en Render y similares)
+SERVIDOR WEB (solo en Render y similares)
 ====================================================
 
-Render corta el despliegue si el proceso no escucha un
-puerto ("No open ports detected"), y su plan gratuito
-duerme el servicio si nadie le llama en 15 minutos.
+Cuando existe PORT, el bot también sirve la Mini App y
+la API desde el mismo proceso y el mismo dominio, así no
+hace falta alojarlas aparte ni configurar CORS.
 
-Este servidor cumple las dos cosas: abre el puerto y da
-una URL que un ping externo puede visitar para mantener
-el bot despierto.
-
-Termux no define PORT, así que allí no se abre nada.
+Termux no define PORT, así que allí el bot funciona solo
+como bot, igual que siempre.
 */
 
-function startHealthServer() {
-
-    const port = process.env.PORT;
-
-    if (!port) {
-        return;
-    }
-
-    require('http')
-        .createServer((request, response) => {
-
-            response.writeHead(200, {
-                'Content-Type': 'application/json'
-            });
-
-            response.end(JSON.stringify({
-                ok: true,
-                service: 'secretario-bot',
-                uptime: Math.round(process.uptime()),
-                time: new Date().toISOString()
-            }));
-        })
-        .listen(port, () => {
-
-            console.log(
-                `🌐 Health check escuchando en el puerto ${port}`
-            );
-        });
-}
+const webServer = require('./server');
 
 
 async function main() {
@@ -1538,7 +1507,7 @@ async function main() {
        cuanto antes y no cancele el despliegue.
     */
 
-    startHealthServer();
+    webServer.start();
 
     /*
        Se comprueba la base de datos antes de arrancar: si
