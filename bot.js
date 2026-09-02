@@ -1713,7 +1713,72 @@ async function main() {
         `✅ Hora de inicio: ${tiempo.formatear(new Date())} (${tiempo.ZONA})`
     );
 
-    await bot.launch();
+    await lanzarBot();
+}
+
+
+/*
+   Telegram solo deja que un proceso lea los mensajes de un
+   bot. Al desplegar, el servicio nuevo arranca antes de que
+   muera el viejo, y durante unos segundos son dos: eso es el
+   409, y se pasa solo.
+
+   Por eso se reintenta unas cuantas veces antes de rendirse.
+   Si el conflicto persiste no es el despliegue: es que hay
+   otro bot corriendo de verdad, casi siempre el del móvil.
+*/
+
+const INTENTOS_LANZAMIENTO = 6;
+const ESPERA_ENTRE_INTENTOS = 5000;
+
+async function lanzarBot() {
+
+    for (let intento = 1; intento <= INTENTOS_LANZAMIENTO; intento++) {
+
+        try {
+
+            await bot.launch();
+
+            return;
+
+        } catch (error) {
+
+            const esConflicto =
+                error.response?.error_code === 409 ||
+                /409|conflict/i.test(error.message || '');
+
+            if (!esConflicto) {
+                throw error;
+            }
+
+            if (intento === INTENTOS_LANZAMIENTO) {
+
+                console.error(
+                    '❌ Sigue habiendo otro bot leyendo los mensajes.'
+                );
+
+                console.error(
+                    '   Si lo tienes arrancado en Termux, pármalo con Ctrl+C:'
+                );
+
+                console.error(
+                    '   Telegram no permite dos instancias del mismo bot.'
+                );
+
+                throw error;
+            }
+
+            console.warn(
+                `⚠️  Otro proceso tiene el bot (409). ` +
+                `Reintento ${intento}/${INTENTOS_LANZAMIENTO - 1} ` +
+                `en ${ESPERA_ENTRE_INTENTOS / 1000}s...`
+            );
+
+            await new Promise(
+                resolve => setTimeout(resolve, ESPERA_ENTRE_INTENTOS)
+            );
+        }
+    }
 }
 
 main().catch(err => {
