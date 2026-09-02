@@ -1,16 +1,8 @@
 {
   "rewrites": [
     {
-      "source": "/api/:path*",
-      "destination": "/api"
-    },
-    {
       "source": "/",
       "destination": "/miniapp/index.html"
-    },
-    {
-      "source": "/miniapp/:path*",
-      "destination": "/miniapp/:path*"
     }
   ]
 }

@@ -20,6 +20,22 @@ function methodNotAllowed(res) {
 
 function getPath(req) {
 
+  /*
+   * Al ser una ruta catch-all, Vercel entrega los segmentos
+   * de la URL en req.query.path (por ejemplo ['tasks', '5']).
+   * Si no vienen, se deduce de req.url.
+   */
+
+  const fromQuery = req.query && req.query.path;
+
+  if (Array.isArray(fromQuery)) {
+    return fromQuery.join('/');
+  }
+
+  if (typeof fromQuery === 'string' && fromQuery) {
+    return fromQuery;
+  }
+
   const raw = req.url || '';
 
   const clean = raw.split('?')[0];
@@ -34,7 +50,14 @@ async function getTelegramUser(req) {
     req.headers['x-telegram-init-data'];
 
   if (!initData) {
-    throw new Error('Telegram no ha enviado initData');
+
+    const error = new Error(
+      'Telegram no ha enviado initData. Abre la app desde tu bot.'
+    );
+
+    error.status = 401;
+
+    throw error;
   }
 
   return validateTelegramInitData(initData);
@@ -571,9 +594,20 @@ module.exports = async function handler(req, res) {
 
   } catch (error) {
 
-    console.error(error);
+    const status = error.status || 500;
 
-    return json(res, 500, {
+    /*
+     * Una credencial que falta o no vale no es una avería:
+     * se registra en una línea, sin traza completa.
+     */
+
+    if (status === 500) {
+      console.error(error);
+    } else {
+      console.warn(`${status}: ${error.message}`);
+    }
+
+    return json(res, status, {
       ok: false,
       error: error.message || 'Error interno'
     });
