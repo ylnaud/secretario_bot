@@ -1,0 +1,36 @@
+# Despliegue del bot en Render
+#
+# Render → New → Blueprint → elige este repositorio.
+# Lee este archivo y crea el servicio solo.
+#
+# Las variables NO van aquí: sync:false hace que Render las
+# pida en su panel, para que las credenciales no acaben en Git.
+
+services:
+  - type: web
+    name: secretario-bot
+    runtime: node
+    plan: free
+    region: frankfurt
+    branch: main
+
+    buildCommand: npm install
+    startCommand: npm start
+
+    # Render llama a esta ruta para saber si el servicio vive.
+    healthCheckPath: /
+
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+
+      - key: OWNER_ID
+        sync: false
+
+      - key: DATABASE_URL
+        sync: false
+
+      # En Render el proceso no es tu móvil: se puede bajar
+      # sin gastar batería y así los recordatorios llegan antes.
+      - key: REMINDER_INTERVAL_MS
+        value: "15000"
