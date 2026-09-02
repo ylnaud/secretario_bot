@@ -4,7 +4,9 @@
   "description": "Secretario personal Telegram + Mini App + PostgreSQL",
   "main": "bot.js",
   "scripts": {
-    "start": "node bot.js"
+    "start": "node bot.js",
+    "init-db": "node scripts/init-db.js",
+    "migrate": "node scripts/migrate-json-to-pg.js"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
