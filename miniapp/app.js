@@ -87,8 +87,6 @@ updateDate();
 
 let tasks = [];
 
-let reminders = [];
-
 let shopping = [];
 
 
@@ -99,8 +97,13 @@ function updateSummary() {
   document.getElementById("taskCount").textContent =
     tasks.length;
 
+  /*
+     Los recordatorios no son una lista aparte: son las
+     tareas que tienen fecha y hora de aviso.
+  */
+
   document.getElementById("reminderCount").textContent =
-    reminders.length;
+    tasks.filter(t => t.due_at).length;
 
   document.getElementById("shoppingCount").textContent =
     shopping.length;
@@ -187,11 +190,21 @@ async function saveTask() {
   try {
     isLoading = true;
 
+    /*
+       Con día pero sin hora, el aviso va a las 9:00 de la
+       mañana igual que en el bot. Sin esto se guardaría a
+       medianoche UTC y sonaría de madrugada.
+    */
+
+    const cuando = date.value
+      ? new Date(`${date.value}T09:00`)
+      : null;
+
     const response = await apiCall('tasks', {
       method: 'POST',
       body: JSON.stringify({
         title: input.value.trim(),
-        due_at: date.value ? new Date(date.value).toISOString() : null
+        due_at: cuando ? cuando.toISOString() : null
       })
     });
 
@@ -200,8 +213,9 @@ async function saveTask() {
     tasks.push({
       id: newTask.id,
       text: newTask.title,
-      date: date.value,
-      due_at: newTask.due_at
+      date: cuando ? cuando.toLocaleDateString('es-ES') : '',
+      due_at: newTask.due_at,
+      recurrence: newTask.recurrence
     });
 
     updateSummary();
@@ -381,6 +395,17 @@ function newReminder() {
 
       <div class="form-group">
 
+        <label>Día</label>
+
+        <input
+          id="reminderDate"
+          type="date"
+        >
+
+      </div>
+
+      <div class="form-group">
+
         <label>Hora</label>
 
         <input
@@ -401,32 +426,71 @@ function newReminder() {
 }
 
 
-function saveReminder() {
+/*
+ * Un recordatorio es una tarea con fecha y hora: es lo que
+ * vigila el bot para avisarte. Si se guardara en la tabla
+ * "reminders" nadie lo miraría y el aviso no llegaría nunca.
+ */
+
+async function saveReminder() {
 
   const text =
     document.getElementById("reminderInput").value.trim();
+
+  const day =
+    document.getElementById("reminderDate").value;
 
   const time =
     document.getElementById("reminderTime").value;
 
   if (!text) {
-
-    alert("Escribe qué quieres recordar.");
-
+    notify("Escribe qué quieres recordar.");
     return;
   }
 
-  reminders.push({
-    id: Date.now(),
-    text,
-    time
-  });
+  if (!day || !time) {
+    notify("Pon el día y la hora del aviso.");
+    return;
+  }
 
-  updateSummary();
+  const cuando = new Date(`${day}T${time}`);
 
-  closeModal();
+  if (cuando <= new Date()) {
+    notify("Esa fecha ya pasó. Elige una futura.");
+    return;
+  }
 
-  notify("Recordatorio creado ⏰");
+  try {
+    isLoading = true;
+
+    const response = await apiCall('tasks', {
+      method: 'POST',
+      body: JSON.stringify({
+        title: text,
+        due_at: cuando.toISOString()
+      })
+    });
+
+    const creada = response.task;
+
+    tasks.push({
+      id: creada.id,
+      text: creada.title,
+      date: cuando.toLocaleDateString('es-ES'),
+      due_at: creada.due_at,
+      recurrence: creada.recurrence
+    });
+
+    updateSummary();
+    renderTasks();
+    closeModal();
+    notify("Recordatorio creado ⏰");
+
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  } finally {
+    isLoading = false;
+  }
 }
 
 
