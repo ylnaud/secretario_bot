@@ -115,13 +115,18 @@ module.exports = async function handler(req, res) {
 
     /*
      * HEALTH CHECK
+     *
+     * También responde en /api a secas: así se distingue de un
+     * vistazo si la función existe pero falla el enrutado, o si
+     * Vercel no la ha desplegado.
      */
 
-    if (path === 'health') {
+    if (path === '' || path === 'health') {
 
       return json(res, 200, {
         ok: true,
         service: 'secretario-api',
+        path: path || '(raíz)',
         time: new Date().toISOString()
       });
 
