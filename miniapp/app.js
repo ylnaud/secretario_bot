@@ -166,6 +166,17 @@ function newTask() {
         >
       </div>
 
+      <div class="form-group">
+        <label>¿Se repite?</label>
+
+        <select id="taskRecurrence">
+          <option value="">No, solo una vez</option>
+          <option value="daily">🔁 Todos los días</option>
+          <option value="weekly">🔁 Cada semana</option>
+          <option value="monthly">🔁 Cada mes</option>
+        </select>
+      </div>
+
       <button
         class="form-button"
         onclick="saveTask()"
@@ -200,11 +211,26 @@ async function saveTask() {
       ? new Date(`${date.value}T09:00`)
       : null;
 
+    const repite =
+      document.getElementById("taskRecurrence").value || null;
+
+    /*
+       Sin fecha no hay desde dónde contar la siguiente vez,
+       así que la API rechazaría la repetición.
+    */
+
+    if (repite && !cuando) {
+      notify("Para que se repita, ponle una fecha.");
+      isLoading = false;
+      return;
+    }
+
     const response = await apiCall('tasks', {
       method: 'POST',
       body: JSON.stringify({
         title: input.value.trim(),
-        due_at: cuando ? cuando.toISOString() : null
+        due_at: cuando ? cuando.toISOString() : null,
+        recurrence: repite
       })
     });
 
@@ -306,6 +332,17 @@ function renderModalTasks() {
           font-size: 12px;
           white-space: nowrap;
         ">🗑️</button>
+        ${task.recurrence ? `
+        <button onclick="stopRecurrenceFromUI(${task.id})" title="Dejar de repetir" style="
+          background: var(--bg);
+          color: var(--text);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 8px 12px;
+          cursor: pointer;
+          font-size: 12px;
+          white-space: nowrap;
+        ">🚫</button>` : ''}
       </div>
 
     `).join("");
@@ -435,6 +472,19 @@ function newReminder() {
 
       </div>
 
+      <div class="form-group">
+
+        <label>¿Se repite?</label>
+
+        <select id="reminderRecurrence">
+          <option value="">No, solo una vez</option>
+          <option value="daily">🔁 Todos los días</option>
+          <option value="weekly">🔁 Cada semana</option>
+          <option value="monthly">🔁 Cada mes</option>
+        </select>
+
+      </div>
+
       <button
         class="form-button"
         onclick="saveReminder()"
@@ -487,7 +537,9 @@ async function saveReminder() {
       method: 'POST',
       body: JSON.stringify({
         title: text,
-        due_at: cuando.toISOString()
+        due_at: cuando.toISOString(),
+        recurrence:
+          document.getElementById("reminderRecurrence").value || null
       })
     });
 
@@ -733,6 +785,108 @@ function setActiveNav(button) {
 }
 
 
+/*
+ * RESUMEN DEL DÍA
+ *
+ * Se agrupa aquí con las tareas que ya están cargadas, en vez
+ * de pedirle otro cálculo al servidor: la app tiene los mismos
+ * datos que necesitaría el bot para armarlo.
+ */
+
+function buildDaySummary() {
+
+  const hoy = new Date();
+  const finDeHoy = new Date(hoy);
+  finDeHoy.setHours(23, 59, 59, 999);
+
+  const atrasadas = [];
+  const deHoy = [];
+  const sinFecha = [];
+  let siguiente = null;
+
+  for (const task of tasks) {
+
+    if (!task.due_at) {
+      sinFecha.push(task);
+      continue;
+    }
+
+    const cuando = new Date(task.due_at);
+
+    if (cuando <= finDeHoy && cuando.toDateString() === hoy.toDateString()) {
+      deHoy.push(task);
+    } else if (cuando < hoy) {
+      atrasadas.push(task);
+    } else if (!siguiente || cuando < new Date(siguiente.due_at)) {
+      siguiente = task;
+    }
+  }
+
+  const hora = t =>
+    new Date(t.due_at).toLocaleTimeString('es-ES',
+      { hour: '2-digit', minute: '2-digit' });
+
+  const bloque = (titulo, items, pintar) => items.length ? `
+    <div class="section-title" style="margin-top:18px">
+      <h2 style="font-size:15px">${titulo} (${items.length})</h2>
+    </div>
+    <div class="list">
+      ${items.map(pintar).join('')}
+    </div>` : '';
+
+  const fila = (icono, texto, sub) => `
+    <div class="action">
+      <span>${icono}</span>
+      <div>
+        <strong>${escapeHTML(texto)}</strong>
+        <small>${sub}</small>
+      </div>
+    </div>`;
+
+  if (
+    !atrasadas.length && !deHoy.length &&
+    !sinFecha.length && !shopping.length
+  ) {
+    return `
+      <div class="empty">
+        <div>🎉</div>
+        <p>No tienes nada pendiente.<br>Disfruta el día.</p>
+      </div>`;
+  }
+
+  return `
+    ${bloque('⚠️ Atrasadas', atrasadas,
+      t => fila('⚠️', t.text, new Date(t.due_at).toLocaleDateString('es-ES')))}
+
+    ${bloque('📅 Hoy', deHoy,
+      t => fila('📅', t.text, hora(t) + recurrenceLabel(t.recurrence)))}
+
+    ${bloque('📋 Sin fecha', sinFecha,
+      t => fila('📋', t.text, 'Cuando puedas'))}
+
+    ${siguiente ? `
+      <div class="section-title" style="margin-top:18px">
+        <h2 style="font-size:15px">🔜 Lo siguiente</h2>
+      </div>
+      <div class="list">
+        ${fila('🔜', siguiente.text,
+          new Date(siguiente.due_at).toLocaleDateString('es-ES'))}
+      </div>` : ''}
+
+    ${bloque('🛒 Compras', shopping,
+      i => fila('🛒', i.text, 'Pendiente'))}
+  `;
+}
+
+
+function showDaySummary() {
+
+  openModal('☀️ Resumen del día', buildDaySummary());
+
+  setActiveNav(null);
+}
+
+
 // Inicio
 
 function home() {
@@ -750,26 +904,91 @@ function home() {
 
 // Ajustes
 
+/*
+ * AJUSTES
+ *
+ * De momento solo el resumen diario, que es lo único
+ * configurable que tiene el bot.
+ */
+
+let settings = { summary_hour: null };
+
+
+async function loadSettings() {
+
+  try {
+    const response = await apiCall('settings');
+    settings = response.settings || { summary_hour: null };
+  } catch (error) {
+    console.error('No se pudieron cargar los ajustes:', error);
+  }
+}
+
+
 function showSettings() {
 
+  const actual = settings.summary_hour;
+
+  const horas = Array.from({ length: 24 }, (_, h) =>
+    `<option value="${h}" ${h === actual ? 'selected' : ''}>` +
+    `${String(h).padStart(2, '0')}:00</option>`
+  ).join('');
+
   openModal(
-    "⚙️ Ajustes",
+    '⚙️ Ajustes',
 
     `
-      <div class="empty small">
+      <div class="form-group">
+        <label>Resumen diario</label>
 
-        <div>⚙️</div>
-
-        <p>
-          Los ajustes estarán disponibles
-          en una próxima versión.
-        </p>
-
+        <select id="summaryHour">
+          <option value="" ${actual === null ? 'selected' : ''}>
+            No recibirlo
+          </option>
+          ${horas}
+        </select>
       </div>
+
+      <p style="color:var(--hint);font-size:13px;margin-bottom:15px">
+        Cada mañana te llega al chat del bot un mensaje con las
+        tareas del día, las atrasadas y la lista de la compra.
+      </p>
+
+      <button class="form-button" onclick="saveSettings()">
+        Guardar
+      </button>
     `
   );
 
   setActiveNav(document.querySelectorAll(".nav-item")[4]);
+}
+
+
+async function saveSettings() {
+
+  const valor = document.getElementById("summaryHour").value;
+
+  try {
+    const response = await apiCall('settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        summary_hour: valor === '' ? null : Number(valor)
+      })
+    });
+
+    settings = response.settings;
+
+    closeModal();
+
+    notify(
+      settings.summary_hour === null
+        ? 'Ya no recibirás el resumen diario 🔕'
+        : `Resumen diario a las ${settings.summary_hour}:00 ☀️`
+    );
+
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  }
 }
 
 
@@ -840,6 +1059,34 @@ async function completeTaskFromUI(taskId) {
     notify(`Error: ${error.message}`);
   }
 }
+
+/*
+ * Quita la repetición sin borrar la tarea: la de ahora sigue
+ * pendiente, pero ya no genera la siguiente.
+ */
+
+async function stopRecurrenceFromUI(taskId) {
+
+  try {
+    await apiCall(`tasks/${taskId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ recurrence: null })
+    });
+
+    const task = tasks.find(t => t.id === taskId);
+
+    if (task) {
+      task.recurrence = null;
+    }
+
+    refrescarTareas();
+    notify('Ya no se repetirá 🚫');
+
+  } catch (error) {
+    notify(`Error: ${error.message}`);
+  }
+}
+
 
 async function deleteTaskFromUI(taskId) {
 
@@ -920,7 +1167,8 @@ async function loadData() {
 
     const [tasksData, shoppingData] = await Promise.all([
       apiCall('tasks'),
-      apiCall('shopping')
+      apiCall('shopping'),
+      loadSettings()
     ]);
 
     tasks = (tasksData.tasks || [])

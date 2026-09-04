@@ -406,7 +406,8 @@ button {
   margin-bottom: 7px;
 }
 
-.form-group input {
+.form-group input,
+.form-group select {
   width: 100%;
 
   padding: 13px;
@@ -421,7 +422,27 @@ button {
   outline: none;
 }
 
-.form-group input:focus {
+.form-group select {
+  appearance: none;
+
+  /* Hueco a la derecha para la flecha dibujada de fondo */
+  padding-right: 38px;
+
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--hint) 50%),
+    linear-gradient(135deg, var(--hint) 50%, transparent 50%);
+
+  background-position:
+    calc(100% - 20px) 50%,
+    calc(100% - 15px) 50%;
+
+  background-size: 5px 5px, 5px 5px;
+
+  background-repeat: no-repeat;
+}
+
+.form-group input:focus,
+.form-group select:focus {
   border-color: var(--button);
 }
 

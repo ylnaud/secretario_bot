@@ -182,7 +182,8 @@ module.exports = async function handler(req, res) {
         const {
           title,
           description = null,
-          due_at = null
+          due_at = null,
+          recurrence = null
         } = req.body || {};
 
         if (!title || !String(title).trim()) {
@@ -194,18 +195,46 @@ module.exports = async function handler(req, res) {
 
         }
 
+        if (
+          recurrence &&
+          !['daily', 'weekly', 'monthly'].includes(recurrence)
+        ) {
+
+          return json(res, 400, {
+            ok: false,
+            error: 'La repetición debe ser daily, weekly o monthly'
+          });
+
+        }
+
+        /*
+         * Una tarea que se repite necesita fecha: sin ella no
+         * hay desde dónde contar la siguiente vez.
+         */
+
+        if (recurrence && !due_at) {
+
+          return json(res, 400, {
+            ok: false,
+            error: 'Una tarea que se repite necesita fecha'
+          });
+
+        }
+
         const rows = await sql`
           INSERT INTO tasks (
             user_id,
             title,
             description,
-            due_at
+            due_at,
+            recurrence
           )
           VALUES (
             ${user.id},
             ${String(title).trim()},
             ${description},
-            ${due_at || null}
+            ${due_at || null},
+            ${recurrence}
           )
           RETURNING *
         `;
@@ -248,25 +277,54 @@ module.exports = async function handler(req, res) {
           title,
           description,
           due_at,
-          completed
+          completed,
+          recurrence
         } = req.body || {};
 
-        const rows = await sql`
-          UPDATE tasks
+        /*
+         * La repetición necesita dos consultas en lugar de un
+         * COALESCE: aquí null significa "deja de repetirse", y
+         * COALESCE lo confundiría con "no lo toques". Sin esta
+         * separación, completar una tarea le borraría de paso
+         * la repetición.
+         */
 
-          SET
-            title = COALESCE(${title ?? null}, title),
-            description = COALESCE(${description ?? null}, description),
-            due_at = ${due_at === undefined ? null : due_at},
-            completed = COALESCE(${completed ?? null}, completed),
-            updated_at = NOW()
+        const rows = recurrence !== undefined
 
-          WHERE
-            id = ${id}
-            AND user_id = ${user.id}
+          ? await sql`
+              UPDATE tasks
 
-          RETURNING *
-        `;
+              SET
+                title = COALESCE(${title ?? null}, title),
+                description = COALESCE(${description ?? null}, description),
+                due_at = ${due_at === undefined ? null : due_at},
+                completed = COALESCE(${completed ?? null}, completed),
+                recurrence = ${recurrence},
+                updated_at = NOW()
+
+              WHERE
+                id = ${id}
+                AND user_id = ${user.id}
+
+              RETURNING *
+            `
+
+          : await sql`
+              UPDATE tasks
+
+              SET
+                title = COALESCE(${title ?? null}, title),
+                description = COALESCE(${description ?? null}, description),
+                due_at = ${due_at === undefined ? null : due_at},
+                completed = COALESCE(${completed ?? null}, completed),
+                updated_at = NOW()
+
+              WHERE
+                id = ${id}
+                AND user_id = ${user.id}
+
+              RETURNING *
+            `;
 
         if (!rows.length) {
 
@@ -308,6 +366,75 @@ module.exports = async function handler(req, res) {
 
         return json(res, 200, {
           ok: true
+        });
+
+      }
+
+
+      return methodNotAllowed(res);
+
+    }
+
+
+    /*
+     * AJUSTES
+     */
+
+    if (path === 'settings') {
+
+      if (req.method === 'GET') {
+
+        const rows = await sql`
+          SELECT summary_hour
+          FROM users
+          WHERE id = ${user.id}
+        `;
+
+        return json(res, 200, {
+          ok: true,
+          settings: {
+            summary_hour: rows[0] ? rows[0].summary_hour : null
+          }
+        });
+
+      }
+
+
+      if (req.method === 'PUT') {
+
+        const { summary_hour } = req.body || {};
+
+        /*
+         * null apaga el resumen diario; un número entre 0 y 23
+         * es la hora a la que se quiere recibir.
+         */
+
+        const apagar =
+          summary_hour === null || summary_hour === '';
+
+        const hora = apagar ? null : Number(summary_hour);
+
+        if (
+          !apagar &&
+          (!Number.isInteger(hora) || hora < 0 || hora > 23)
+        ) {
+
+          return json(res, 400, {
+            ok: false,
+            error: 'La hora debe estar entre 0 y 23'
+          });
+
+        }
+
+        await sql`
+          UPDATE users
+          SET summary_hour = ${hora}, updated_at = NOW()
+          WHERE id = ${user.id}
+        `;
+
+        return json(res, 200, {
+          ok: true,
+          settings: { summary_hour: hora }
         });
 
       }
