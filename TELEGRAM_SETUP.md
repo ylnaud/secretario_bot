@@ -302,7 +302,6 @@ curl -X POST \
 .env                          - Variables de entorno (NO commitear)
 bot.js                        - Bot de Telegram (proceso 24/7)
 database.js                   - Acceso a PostgreSQL desde el bot
-database-json.js              - Versión antigua en archivo local (respaldo)
 api/index.js                  - API REST (en Vercel)
 miniapp/                      - Mini App (HTML + JS + CSS)
   ├── index.html             - Interfaz

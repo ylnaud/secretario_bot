@@ -125,5 +125,3 @@ Definidas en el panel de Render (`sync: false`, nunca en Git). Ver
   generosas, cabecera de bloque en mayúsculas para separar secciones. Imítalo.
 - **Sin tests ni linter**: verifica con `node --check <archivo>` y arranque
   manual, y di explícitamente cuando no puedas comprobar algo.
-- `database-json.js` es del almacenamiento anterior en JSON y ya no lo importa
-  nadie. Déjalo salvo que se pida quitarlo.
