@@ -5,7 +5,7 @@
  *
  *   /            → la Mini App (miniapp/index.html)
  *   /style.css   → los archivos de la Mini App
- *   /api/...     → la API, el mismo handler que usaba Vercel
+ *   /api/...     → la API (api/index.js)
  *   /health      → comprobación de vida
  *
  * Que todo comparta dominio evita configurar CORS: la Mini App
@@ -54,7 +54,7 @@ CUERPO DE LA PETICIÓN
 ====================================================
 
 El handler de la API espera req.body ya convertido a
-objeto, como se lo daba Vercel.
+objeto.
 */
 
 function readJsonBody(request) {
@@ -99,10 +99,9 @@ function readJsonBody(request) {
 API
 ====================================================
 
-api/index.js está escrito para Vercel, así que espera
-res.status().json() y req.query. Se los añadimos aquí
-en vez de tocar el handler, para que siga sirviendo en
-los dos sitios.
+api/index.js espera res.status().json() y req.query, que
+no existen en el http de Node. Se los añadimos aquí en
+vez de tocar el handler.
 */
 
 async function handleApi(request, response, pathname) {

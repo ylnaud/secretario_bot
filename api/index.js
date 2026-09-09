@@ -21,9 +21,9 @@ function methodNotAllowed(res) {
 function getPath(req) {
 
   /*
-   * La ruta llega en la query, porque vercel.json reescribe
-   * /api/tasks/5 como /api/index.js?path=tasks/5. Una cadena
-   * vacía es válida: significa /api a secas.
+   * La ruta llega en la query: server.js pasa /api/tasks/5
+   * como req.query.path = 'tasks/5'. Una cadena vacía es
+   * válida: significa /api a secas.
    */
 
   const fromQuery = req.query && req.query.path;
@@ -125,8 +125,8 @@ module.exports = async function handler(req, res) {
      * HEALTH CHECK
      *
      * También responde en /api a secas: así se distingue de un
-     * vistazo si la función existe pero falla el enrutado, o si
-     * Vercel no la ha desplegado.
+     * vistazo si el handler existe pero falla el enrutado, o si
+     * ni siquiera se está cargando.
      */
 
     if (path === '' || path === 'health') {

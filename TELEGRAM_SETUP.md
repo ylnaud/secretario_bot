@@ -337,7 +337,6 @@ scripts/init-db.js            - Crea las tablas
 scripts/migrate-json-to-pg.js - Sube los datos locales a PostgreSQL
 package.json                  - Dependencias
 render.yaml                   - Configuración de Render (Blueprint)
-vercel.json                   - Del despliegue anterior en Vercel
 ```
 
 ⚠️ **`DATABASE_URL` debe ser idéntico en `.env` y en Render.** Es lo

@@ -1,7 +1,7 @@
 /*
  * BASE DE DATOS COMPARTIDA (PostgreSQL / Neon)
  *
- * El bot (Termux) y la Mini App (Vercel) usan ESTA misma base
+ * El bot (Termux) y la Mini App (Render) usan ESTA misma base
  * de datos, así que las tareas y compras se ven en los dos sitios.
  *
  * Neon viaja por HTTP, no por TCP, así que funciona en Termux

@@ -85,11 +85,10 @@ rama `main`, plan free, región frankfurt):
   - `/api/...` → `api/index.js`
   - `/health` → healthCheck de Render
 
-`vercel.json` + `api/index.js` son del despliegue anterior en Vercel. El
-handler de `api/index.js` sigue escrito al estilo Vercel (`req.query.path`,
-`res.status().json()`) y `server.js` le añade ese envoltorio a mano. **No
-reescribas el handler al estilo Node nativo**: rompería el despliegue en
-Vercel y no aporta nada.
+`api/index.js` es un handler con firma de función serverless
+(`req.query.path`, `res.status().json()`), herencia del despliegue anterior;
+`server.js` le añade ese envoltorio a mano. Funciona: **no lo reescribas al
+estilo Node nativo** salvo que se pida.
 
 ## Variables de entorno
 

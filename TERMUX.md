@@ -18,7 +18,7 @@ Ahora los dos usan la misma:
 ```
 bot.js (Termux)  ──┐
                    ├──▶  PostgreSQL en Neon
-Mini App (Vercel) ─┘
+Mini App (Render) ─┘
 ```
 
 Neon viaja por HTTPS, así que desde Termux funciona con datos o
@@ -62,7 +62,7 @@ DATABASE_URL=postgresql://...neon.tech/...?sslmode=require
 ```
 
 **Importante:** el `DATABASE_URL` tiene que ser **el mismo** que
-pusiste en las variables de entorno de Vercel. Si son distintos,
+pusiste en las variables de entorno de Render. Si son distintos,
 seguirán siendo dos bases de datos separadas.
 
 ### 4. Crear las tablas
@@ -188,9 +188,8 @@ Sin internet, o el `DATABASE_URL` está mal copiado. Prueba
 `ping neon.tech`. Ojo con las comillas al pegar la cadena.
 
 **La Mini App sigue vacía**
-Casi siempre es que Vercel tiene un `DATABASE_URL` distinto al de
-tu `.env`. Compáralos en el panel de Vercel → Settings →
-Environment Variables.
+Casi siempre es que Render tiene un `DATABASE_URL` distinto al de
+tu `.env`. Compáralos en el panel de Render → Environment.
 
 **El bot se para al bloquear la pantalla**
 Falta el wake lock o la exención de batería. Mira la sección
