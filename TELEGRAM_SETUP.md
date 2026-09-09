@@ -14,8 +14,10 @@ Tu proyecto tiene 3 componentes que deben conectarse:
 └─────────────────────────────────────────────────┘
           ↓ (Validación)
 ┌─────────────────────────────────────────────────┐
-│              API REST (Vercel)                  │
+│        SERVICIO EN RENDER (un solo proceso)     │
 ├─────────────────────────────────────────────────┤
+│  • bot.js            (polling de Telegram)      │
+│  • /                 (la Mini App)              │
 │  • /api/tasks        (CRUD tareas)              │
 │  • /api/shopping     (CRUD compras)             │
 │  • /api/reminders    (CRUD recordatorios)       │
@@ -29,6 +31,9 @@ Tu proyecto tiene 3 componentes que deben conectarse:
 │  • Usuarios y sesiones                          │
 └─────────────────────────────────────────────────┘
 ```
+
+El bot y la Mini App comparten proceso y dominio, así que no hay
+CORS que configurar ni dos despliegues que mantener.
 
 ---
 
@@ -84,9 +89,10 @@ Your first name: Pedro
 ### 3.2 Configurar el Botón
 
 - **Label (Texto del botón):** `Abrir Secretario`
-- **URL:** `https://tu-proyecto.vercel.app`
+- **URL:** `https://tu-servicio.onrender.com`
 
-⚠️ La URL debe ser tu dominio de Vercel o tu servidor
+⚠️ La URL es la del servicio de Render (PASO 5). Telegram solo abre
+miniaplicaciones por `https`, así que una dirección local no vale.
 
 Resultado:
 - El bot tendrá un botón debajo del chat que abre tu Mini App
@@ -118,40 +124,47 @@ OWNER_ID=987654321
 # - Railway: https://railway.app (pago)
 DATABASE_URL=postgresql://user:password@host:5432/secretario?sslmode=require
 
-# URL de tu Mini App (cuando hagas deploy a Vercel)
-MINI_APP_URL=https://tu-proyecto.vercel.app
+# URL de tu Mini App. En Render NO hace falta: el bot usa
+# RENDER_EXTERNAL_URL, que Render publica solo.
+MINI_APP_URL=https://tu-servicio.onrender.com
 ```
 
 ---
 
-## PASO 5: Desplegar a Vercel
+## PASO 5: Desplegar en Render
 
-### 5.1 Conectar GitHub a Vercel
+Guía detallada (incluido el plan gratuito y sus pegas):
+[RENDER.md](RENDER.md). En resumen:
 
-1. Ir a https://vercel.com
-2. Hacer login con GitHub
-3. Seleccionar repositorio `secretario_bot`
-4. Vercel detectará automáticamente que es un proyecto Node.js
+### 5.1 Crear el servicio
+
+1. Ir a https://render.com y acceder con GitHub
+2. **New** → **Blueprint**
+3. Elegir el repositorio `secretario_bot`
+4. Render lee `render.yaml` y prepara el servicio solo
 
 ### 5.2 Configurar Variables de Entorno
 
-En Vercel dashboard:
-1. Ir a **Settings**
-2. Ir a **Environment Variables**
-3. Añadir:
-   - `BOT_TOKEN`
-   - `OWNER_ID`
-   - `DATABASE_URL`
-   - `MINI_APP_URL`
+Render pedirá las tres marcadas como secretas en `render.yaml`:
+
+- `BOT_TOKEN`
+- `OWNER_ID`
+- `DATABASE_URL`
+
+`TIMEZONE` y `REMINDER_INTERVAL_MS` ya vienen con valor en
+`render.yaml`. `MINI_APP_URL` no hace falta.
 
 ### 5.3 Deploy
 
-Vercel hará deploy automático en cada push a main.
+**Apply**. Render vuelve a desplegar en cada push a `main`.
 
-URL de tu Mini App:
+URL del servicio, que sirve el bot, la Mini App y la API:
 ```
-https://secretario-bot.vercel.app
+https://secretario-bot.onrender.com
 ```
+
+⚠️ Si el bot ya está corriendo en Termux, párralo antes: Telegram no
+permite dos procesos leyendo los mismos mensajes (error `409 Conflict`).
 
 ---
 
@@ -181,13 +194,16 @@ El bot estará escuchando comandos de Telegram.
 
 ### 6.3 Dónde ejecutarlo
 
+- **Render:** el despliegue habitual, ver [RENDER.md](RENDER.md).
+  `npm start` arranca el bot y, como Render define `PORT`, también el
+  servidor web con la Mini App y la API
 - **Termux (Android):** ver [TERMUX.md](TERMUX.md) — wake lock,
   arranque automático y consumo de batería
 - **Tu ordenador:** durante el desarrollo
-- **Un servidor 24/7:** Railway, Render, Fly.io
 
-⚠️ El bot necesita un proceso vivo permanentemente, por eso no va
-en Vercel: allí solo vive la API y la Mini App.
+⚠️ El bot necesita un proceso vivo permanentemente, así que no vale un
+alojamiento sin servidor. Y solo uno a la vez: dos procesos con el
+mismo `BOT_TOKEN` dan `409 Conflict`.
 
 ---
 
@@ -211,16 +227,19 @@ en Vercel: allí solo vive la API y la Mini App.
 ### 7.3 Probar API Directa
 
 ```bash
+# Comprobar que el servicio vive (no necesita credenciales)
+curl https://tu-servicio.onrender.com/api/health
+
 # Obtener tareas
 curl -H "x-telegram-init-data: $(tg_init_data)" \
-     https://tu-proyecto.vercel.app/api/tasks
+     https://tu-servicio.onrender.com/api/tasks
 
 # Crear tarea
 curl -X POST \
      -H "x-telegram-init-data: $(tg_init_data)" \
      -H "Content-Type: application/json" \
      -d '{"title":"Test","due_at":null}' \
-     https://tu-proyecto.vercel.app/api/tasks
+     https://tu-servicio.onrender.com/api/tasks
 ```
 
 ---
@@ -242,7 +261,8 @@ curl -X POST \
    ↓
 7. API guarda cambios en PostgreSQL
    ↓
-8. Bot detecta recordatorios vencidos (cada 5 segundos)
+8. Bot detecta recordatorios vencidos (cada REMINDER_INTERVAL_MS:
+   30 s por defecto, 15 s en Render)
    ↓
 9. Bot envía notificación automática al usuario
    ↓
@@ -261,19 +281,21 @@ curl -X POST \
 
 ### La Mini App no carga
 
-- [ ] Verificar URL en @BotFather coincide con Vercel
-- [ ] Verificar que la API está respondiendo: `curl https://tu-proyecto.vercel.app/api/health`
+- [ ] Verificar que la URL en @BotFather coincide con la de Render
+- [ ] Verificar que la API está respondiendo: `curl https://tu-servicio.onrender.com/api/health`
 - [ ] Abrir DevTools en el navegador de Telegram
 
 ### Las tareas no se guardan
 
 - [ ] Verificar que `DATABASE_URL` es válido
 - [ ] Verificar que la base de datos está creada
-- [ ] Ver logs de Vercel
+- [ ] Ver los logs del servicio en Render
 
 ### Recordatorios no se envían
 
 - [ ] El bot debe estar ejecutándose 24/7
+- [ ] En el plan gratuito de Render el servicio se duerme a los 15
+      minutos sin visitas: ver [RENDER.md](RENDER.md)
 - [ ] Verificar que `OWNER_ID` es el tuyo
 - [ ] Ver logs del bot
 
@@ -301,8 +323,9 @@ curl -X POST \
 ```
 .env                          - Variables de entorno (NO commitear)
 bot.js                        - Bot de Telegram (proceso 24/7)
+server.js                     - Sirve la Mini App, la API y /health
 database.js                   - Acceso a PostgreSQL desde el bot
-api/index.js                  - API REST (en Vercel)
+api/index.js                  - API REST
 miniapp/                      - Mini App (HTML + JS + CSS)
   ├── index.html             - Interfaz
   ├── app.js                 - Lógica + conexión con API
@@ -313,10 +336,11 @@ lib/telegram.js               - Validación del initData de Telegram
 scripts/init-db.js            - Crea las tablas
 scripts/migrate-json-to-pg.js - Sube los datos locales a PostgreSQL
 package.json                  - Dependencias
-vercel.json                   - Configuración de Vercel
+render.yaml                   - Configuración de Render (Blueprint)
+vercel.json                   - Del despliegue anterior en Vercel
 ```
 
-⚠️ **`DATABASE_URL` debe ser idéntico en `.env` y en Vercel.** Es lo
+⚠️ **`DATABASE_URL` debe ser idéntico en `.env` y en Render.** Es lo
 que hace que el bot y la Mini App vean las mismas tareas.
 
 ---
