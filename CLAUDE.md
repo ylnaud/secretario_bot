@@ -63,3 +63,67 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
+
+---
+
+# Proyecto: secretario_bot
+
+Bot de Telegram (secretario personal: tareas, recordatorios, lista de la compra)
+con Mini App web. Node.js sin framework, sin build, sin tests.
+
+## Despliegue: Render
+
+**Producción corre en Render**, como un único servicio web (`render.yaml`,
+rama `main`, plan free, región frankfurt):
+
+- `npm start` → `bot.js`, que arranca el polling de Telegram **y** llama a
+  `server.js`.
+- `server.js` solo abre puerto si existe `PORT` (lo define Render). En Termux
+  no abre nada y el bot funciona igual.
+- Un solo dominio sirve las tres cosas, así que no hay CORS que configurar:
+  - `/` y estáticos → `miniapp/`
+  - `/api/...` → `api/index.js`
+  - `/health` → healthCheck de Render
+
+`vercel.json` + `api/index.js` son del despliegue anterior en Vercel. El
+handler de `api/index.js` sigue escrito al estilo Vercel (`req.query.path`,
+`res.status().json()`) y `server.js` le añade ese envoltorio a mano. **No
+reescribas el handler al estilo Node nativo**: rompería el despliegue en
+Vercel y no aporta nada.
+
+## Variables de entorno
+
+Definidas en el panel de Render (`sync: false`, nunca en Git). Ver
+`.env.example` para el desarrollo local:
+
+- `BOT_TOKEN`, `OWNER_ID`, `DATABASE_URL` → obligatorias, `bot.js` sale con
+  error si falta alguna.
+- `TIMEZONE` (por defecto `Atlantic/Canary`), `REMINDER_INTERVAL_MS`,
+  `MINI_APP_URL`, `PORT`.
+
+## Estructura
+
+| Archivo | Qué hace |
+|---|---|
+| `bot.js` | Todo el bot: comandos, teclados, bucle de recordatorios, arranque |
+| `server.js` | Servidor HTTP: estáticos de la Mini App + API + `/health` |
+| `api/index.js` | API REST de la Mini App, autenticada con Telegram `initData` |
+| `database.js` | Acceso a datos del bot (traduce `title/completed/name` → `text/done/item`) |
+| `lib/db.js` | Conexión Neon (`@neondatabase/serverless`, va por HTTP, no TCP) |
+| `lib/telegram.js` | Valida el `initData` de la Mini App (HMAC con `BOT_TOKEN`) |
+| `tiempo.js` | Único módulo que sabe de zonas horarias. Distingue "pared" (reloj del usuario) de "instante" (Date guardado) |
+| `miniapp/` | Mini App: `index.html`, `app.js`, `style.css`. Sin bundler |
+| `db/schema.sql`, `scripts/` | Esquema, `npm run init-db`, `npm run migrate` |
+
+## Reglas del proyecto
+
+- **Fechas**: cualquier cálculo de horas o fechas pasa por `tiempo.js`. No uses
+  `new Date()` para interpretar lo que escribe el usuario.
+- **Base de datos compartida**: bot y Mini App leen la MISMA base. Un cambio de
+  esquema afecta a `database.js` y a `api/index.js` a la vez.
+- **Estilo**: comentarios en español explicando el *porqué*, líneas en blanco
+  generosas, cabecera de bloque en mayúsculas para separar secciones. Imítalo.
+- **Sin tests ni linter**: verifica con `node --check <archivo>` y arranque
+  manual, y di explícitamente cuando no puedas comprobar algo.
+- `database-json.js` es del almacenamiento anterior en JSON y ya no lo importa
+  nadie. Déjalo salvo que se pida quitarlo.
